@@ -155,19 +155,79 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
 
 ENDFORM.
 
+FORM simulate_bapi_orders.
+  DATA: lv_count TYPE i,
+        ls_order TYPE ty_order,
+        ls_return TYPE bapiret2.  " Standard BAPI return structure
 
-start-of-selection.
-  START-OF-SELECTION.
-  DATA(ls_order) TYPE ty_order.
+  DO p_o_num TIMES.
+    " Generate a new random order
+    PERFORM select_random_data CHANGING ls_order.
 
+    " Call the BAPI to simulate order creation
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+      EXPORTING
+        order_header_in = VALUE bapisdhd1( )  " Adjust as needed
+      TABLES
+        return          = DATA(it_return).   " Capture response messages
+
+    " Check if the BAPI simulation was successful
+    READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
+    IF sy-subrc = 0.
+      " Order failed, store in failed orders table
+      APPEND ls_order TO it_failed_orders.
+
+      " Retry with a new order
+      CLEAR ls_order.
+      PERFORM select_random_data CHANGING ls_order.
+
+      " Re-attempt BAPI
+      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+        EXPORTING
+          order_header_in = VALUE bapisdhd1( )  " Adjust as needed
+        TABLES
+          return          = it_return.
+
+      READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
+      IF sy-subrc = 0.
+        " Second attempt also failed
+        APPEND ls_order TO it_failed_orders.
+      ELSE.
+        " Second attempt succeeded
+        APPEND ls_order TO it_success_orders.
+      ENDIF.
+
+    ELSE.
+      " Order successful
+      APPEND ls_order TO it_success_orders.
+    ENDIF.
+
+  ENDDO.
+ENDFORM.
+
+
+START-OF-SELECTION.
   PERFORM load_master_data.
-  PERFORM select_random_data CHANGING ls_order.
+  PERFORM simulate_bapi_orders.
 
-  " Output the selected order details
-  WRITE: / 'Selected Customer:', ls_order-customer-kunnr, ls_order-customer-name1.
-  WRITE: / 'Sales Area:', ls_order-sales_data-vkorg, ls_order-sales_data-vtweg, ls_order-sales_data-spart.
-  WRITE: / 'Selected Material:', ls_order-material-matnr, ls_order-material-mtart.
-  WRITE: / 'Quantity:', ls_order-quantity.
+  " Display results
+  PERFORM display_results.
+
+FORM display_results.
+  WRITE: / '--- Successful Orders ---'.
+  LOOP AT it_success_orders INTO DATA(ls_succ_order).
+    WRITE: / ls_succ_order-order_id,
+             ls_succ_order-customer-kunnr,
+             ls_succ_order-quantity.
+  ENDLOOP.
+
+  WRITE: / '--- Failed Orders ---'.
+  LOOP AT it_failed_orders INTO DATA(ls_fail_order).
+    WRITE: / ls_fail_order-order_id,
+             ls_fail_order-customer-kunnr,
+             ls_fail_order-quantity.
+  ENDLOOP.
+ENDFORM.
 
 
 
