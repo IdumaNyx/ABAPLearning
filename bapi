@@ -40,6 +40,10 @@ DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
+PARAMETERS: p_num_orders TYPE i DEFAULT 10.
+
+
+
 
 *---------------------------------------------------------------------
 * Global Declarations for Master Data Tables
@@ -85,4 +89,4 @@ FORM load_master_data.
   ENDIF.
 ENDFORM.
 
-PARAMETERS: p_num_orders TYPE i DEFAULT 10.
+
