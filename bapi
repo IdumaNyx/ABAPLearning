@@ -1,0 +1,43 @@
+REPORT z_simulate_bapi_orders.
+
+*---------------------------------------------------------------------
+* Custom Type Definitions
+*---------------------------------------------------------------------
+TYPES: BEGIN OF ty_customer.
+  " Customer general data from KNA1
+  kunnr TYPE kna1-kunnr,
+  name1 TYPE kna1-name1,
+END OF ty_customer.
+
+TYPES: BEGIN OF ty_sales.
+  " Customer sales area data from KNVV
+  vkorg TYPE knvv-vkorg,
+  vtweg TYPE knvv-vtweg,
+  spart TYPE knvv-spart,
+END OF ty_sales.
+
+TYPES: BEGIN OF ty_material.
+  " Material data from MARA
+  matnr TYPE mara-matnr,
+  ersda TYPE mara-ersda,
+  mtart TYPE mara-mtart,
+END OF ty_material.
+
+TYPES: BEGIN OF ty_order.
+  order_id   TYPE char10,
+  customer   TYPE ty_customer,
+  sales_data TYPE ty_sales,
+  material   TYPE ty_material,
+  quantity   TYPE i,
+END OF ty_order.
+
+*---------------------------------------------------------------------
+* Global Data Declarations
+*---------------------------------------------------------------------
+DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
+      it_failed_orders  TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY.
+
+*---------------------------------------------------------------------
+* Selection Screen Parameter: Number of orders to simulate
+*---------------------------------------------------------------------
+PARAMETERS: p_num_orders TYPE i DEFAULT 10.
