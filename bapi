@@ -99,12 +99,90 @@ FORM load_master_data.
   ENDIF.
 ENDFORM.
 
+*---------------------------------------------------------------------
+* Form Routine to Select Random Data for an Order
+*---------------------------------------------------------------------
+FORM select_random_data CHANGING eo_order TYPE ty_order.
+  DATA: lv_random_index TYPE i,
+        lv_max_customers TYPE i VALUE 0,
+        lv_max_sales TYPE i VALUE 0,
+        lv_max_materials TYPE i VALUE 0.
+
+  " Get table sizes
+  lv_max_customers = LINES( it_customers ).
+  lv_max_sales = LINES( it_sales_data ).
+  lv_max_materials = LINES( it_materials ).
+
+  " Error handling if tables are empty
+  IF lv_max_customers = 0 OR lv_max_sales = 0 OR lv_max_materials = 0.
+    MESSAGE 'One or more master data tables are empty!' TYPE 'E'.
+  ENDIF.
+
+  " --- Random Selection from Customer Data ---
+  CALL FUNCTION 'RANDOM_INTEGER'
+    EXPORTING
+      i_low  = 1
+      i_high = lv_max_customers
+    IMPORTING
+      i_random = lv_random_index.
+
+  READ TABLE it_customers INDEX lv_random_index INTO eo_order-customer.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random customer' TYPE 'E'.
+  ENDIF.
+
+  " --- Random Selection from Sales Area Data ---
+  CALL FUNCTION 'RANDOM_INTEGER'
+    EXPORTING
+      i_low  = 1
+      i_high = lv_max_sales
+    IMPORTING
+      i_random = lv_random_index.
+
+  READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random sales area' TYPE 'E'.
+  ENDIF.
+
+  " --- Random Selection from Material Data ---
+  CALL FUNCTION 'RANDOM_INTEGER'
+    EXPORTING
+      i_low  = 1
+      i_high = lv_max_materials
+    IMPORTING
+      i_random = lv_random_index.
+
+  READ TABLE it_materials INDEX lv_random_index INTO eo_order-material.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random material' TYPE 'E'.
+  ENDIF.
+
+  " --- Generate a Random Quantity (Between 1 and 100) ---
+  CALL FUNCTION 'RANDOM_INTEGER'
+    EXPORTING
+      i_low  = 1
+      i_high = 100
+    IMPORTING
+      i_random = eo_order-quantity.
+
+ENDFORM.
 
 
 
 
 
 start-of-selection.
-  perform load_master_data.
+  START-OF-SELECTION.
+  DATA(ls_order) TYPE ty_order.
+
+  PERFORM load_master_data.
+  PERFORM select_random_data CHANGING ls_order.
+
+  " Output the selected order details
+  WRITE: / 'Selected Customer:', ls_order-customer-kunnr, ls_order-customer-name1.
+  WRITE: / 'Sales Area:', ls_order-sales_data-vkorg, ls_order-sales_data-vtweg, ls_order-sales_data-spart.
+  WRITE: / 'Selected Material:', ls_order-material-matnr, ls_order-material-mtart.
+  WRITE: / 'Quantity:', ls_order-quantity.
+
 
 
