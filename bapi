@@ -99,9 +99,7 @@ FORM load_master_data.
   ENDIF.
 ENDFORM.
 
-*---------------------------------------------------------------------
-* Form Routine to Select Random Data for an Order
-*---------------------------------------------------------------------
+
 FORM select_random_data CHANGING eo_order TYPE ty_order.
   DATA: lv_random_index TYPE i,
         lv_max_customers TYPE i VALUE 0,
@@ -119,55 +117,35 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
   ENDIF.
 
   " --- Random Selection from Customer Data ---
-  CALL FUNCTION 'RANDOM_INTEGER'
-    EXPORTING
-      i_low  = 1
-      i_high = lv_max_customers
-    IMPORTING
-      i_random = lv_random_index.
-
+  lv_random_index = cl_abap_random_int=>create( seed = sy-uzeit )->get_next( i_low = 1 i_high = lv_max_customers ).
   READ TABLE it_customers INDEX lv_random_index INTO eo_order-customer.
   IF sy-subrc <> 0.
     MESSAGE 'Error selecting random customer' TYPE 'E'.
   ENDIF.
 
   " --- Random Selection from Sales Area Data ---
-  CALL FUNCTION 'RANDOM_INTEGER'
-    EXPORTING
-      i_low  = 1
-      i_high = lv_max_sales
-    IMPORTING
-      i_random = lv_random_index.
-
+  lv_random_index = cl_abap_random_int=>create( seed = sy-uzeit )->get_next( i_low = 1 i_high = lv_max_sales ).
   READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
   IF sy-subrc <> 0.
     MESSAGE 'Error selecting random sales area' TYPE 'E'.
   ENDIF.
 
   " --- Random Selection from Material Data ---
-  CALL FUNCTION 'RANDOM_INTEGER'
-    EXPORTING
-      i_low  = 1
-      i_high = lv_max_materials
-    IMPORTING
-      i_random = lv_random_index.
-
-  READ TABLE it_materials INDEX lv_random_index INTO eo_order-material.
-  IF sy-subrc <> 0.
+  lv_random_index = cl_abap_random_int=>create( seed = sy-uzeit )->get_next( i_low = 1 i_high = lv_max_materials ).
+  DATA: ls_material TYPE mara.
+  READ TABLE it_materials INDEX lv_random_index INTO ls_material.
+  IF sy-subrc = 0.
+    eo_order-material-matnr = ls_material-matnr.
+    eo_order-material-ersda = ls_material-ersda.
+    eo_order-material-mtart = ls_material-mtart.
+  ELSE.
     MESSAGE 'Error selecting random material' TYPE 'E'.
   ENDIF.
 
   " --- Generate a Random Quantity (Between 1 and 100) ---
-  CALL FUNCTION 'RANDOM_INTEGER'
-    EXPORTING
-      i_low  = 1
-      i_high = 100
-    IMPORTING
-      i_random = eo_order-quantity.
+  eo_order-quantity = cl_abap_random_int=>create( seed = sy-uzeit )->get_next( i_low = 1 i_high = 100 ).
 
 ENDFORM.
-
-
 
 
 
