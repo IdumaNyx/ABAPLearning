@@ -155,21 +155,32 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
 
 ENDFORM.
 
+!------------------------‐--------------------------------–--------------
+
 FORM simulate_bapi_orders.
   DATA: lv_count TYPE i,
         ls_order TYPE ty_order,
-        ls_return TYPE bapiret2.  " Standard BAPI return structure
+        ls_return TYPE bapiret2,  " Standard BAPI return structure
+        it_return TYPE TABLE OF bapiret2,  " Declare return messages table
+        ls_order_header TYPE bapisdhd1.  " Correct BAPI order header structure
 
   DO p_o_num TIMES.
     " Generate a new random order
     PERFORM select_random_data CHANGING ls_order.
 
+    " Populate order header fields
+    CLEAR ls_order_header.
+    ls_order_header-doc_type = 'TA'.  " Standard Order
+    ls_order_header-sales_org = ls_order-sales_data-vkorg.
+    ls_order_header-distr_chan = ls_order-sales_data-vtweg.
+    ls_order_header-division = ls_order-sales_data-spart.
+
     " Call the BAPI to simulate order creation
     CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
       EXPORTING
-        order_header_in = VALUE bapisdhd1( )  " Adjust as needed
+        order_header_in = ls_order_header
       TABLES
-        return          = DATA(it_return).   " Capture response messages
+        return          = it_return.
 
     " Check if the BAPI simulation was successful
     READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
@@ -184,7 +195,7 @@ FORM simulate_bapi_orders.
       " Re-attempt BAPI
       CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
         EXPORTING
-          order_header_in = VALUE bapisdhd1( )  " Adjust as needed
+          order_header_in = ls_order_header
         TABLES
           return          = it_return.
 
