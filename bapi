@@ -52,22 +52,32 @@ DATA: it_customers  TYPE STANDARD TABLE OF kna1,
       it_sales_data TYPE STANDARD TABLE OF knvv,
       it_materials  TYPE STANDARD TABLE OF mara.
 
-*---------------------------------------------------------------------
-* Simple Error Handler (temporary)
-*---------------------------------------------------------------------
-FORM handle_error USING iv_msg TYPE string.
-  WRITE: / 'ERROR: ', iv_msg.
-  " You can also add an EXIT or RAISE statement if needed.
-ENDFORM.
 
 *---------------------------------------------------------------------
-* Form Routine to Load Master Data
+* Local Class for Error Handling
+*---------------------------------------------------------------------
+CLASS lcl_error_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS: handle_error IMPORTING iv_msg TYPE string.
+ENDCLASS.
+
+CLASS lcl_error_handler IMPLEMENTATION.
+  METHOD handle_error.
+    MESSAGE iv_msg TYPE 'E'.  " Display error messages properly
+  ENDMETHOD.
+ENDCLASS.
+
+*---------------------------------------------------------------------
+* Form Routine to Load Master Data with Enhanced Error Handling
 *---------------------------------------------------------------------
 FORM load_master_data.
+  " Create an instance of the error handler class
+  DATA(lo_error) = NEW lcl_error_handler( ).
+
   " Load customer general data from KNA1
   SELECT * FROM kna1 INTO TABLE it_customers.
   IF sy-subrc <> 0.
-    PERFORM handle_error USING 'Error loading customer data from KNA1'.
+    lo_error->handle_error( 'Error loading customer data from KNA1' ).
   ELSE.
     WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
   ENDIF.
@@ -75,7 +85,7 @@ FORM load_master_data.
   " Load customer sales area data from KNVV
   SELECT * FROM knvv INTO TABLE it_sales_data.
   IF sy-subrc <> 0.
-    PERFORM handle_error USING 'Error loading sales area data from KNVV'.
+    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
   ELSE.
     WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
   ENDIF.
@@ -83,10 +93,18 @@ FORM load_master_data.
   " Load material data from MARA
   SELECT * FROM mara INTO TABLE it_materials.
   IF sy-subrc <> 0.
-    PERFORM handle_error USING 'Error loading material data from MARA'.
+    lo_error->handle_error( 'Error loading material data from MARA' ).
   ELSE.
     WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
   ENDIF.
 ENDFORM.
+
+
+
+
+
+
+start-of-selection.
+  perform load_master_data.
 
 
