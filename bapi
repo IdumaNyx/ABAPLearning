@@ -40,4 +40,49 @@ DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
+
+*---------------------------------------------------------------------
+* Global Declarations for Master Data Tables
+*---------------------------------------------------------------------
+DATA: it_customers  TYPE STANDARD TABLE OF kna1,
+      it_sales_data TYPE STANDARD TABLE OF knvv,
+      it_materials  TYPE STANDARD TABLE OF mara.
+
+*---------------------------------------------------------------------
+* Simple Error Handler (temporary)
+*---------------------------------------------------------------------
+FORM handle_error USING iv_msg TYPE string.
+  WRITE: / 'ERROR: ', iv_msg.
+  " You can also add an EXIT or RAISE statement if needed.
+ENDFORM.
+
+*---------------------------------------------------------------------
+* Form Routine to Load Master Data
+*---------------------------------------------------------------------
+FORM load_master_data.
+  " Load customer general data from KNA1
+  SELECT * FROM kna1 INTO TABLE it_customers.
+  IF sy-subrc <> 0.
+    PERFORM handle_error USING 'Error loading customer data from KNA1'.
+  ELSE.
+    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
+  ENDIF.
+
+  " Load customer sales area data from KNVV
+  SELECT * FROM knvv INTO TABLE it_sales_data.
+  IF sy-subrc <> 0.
+    PERFORM handle_error USING 'Error loading sales area data from KNVV'.
+  ELSE.
+    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
+  ENDIF.
+
+  " Load material data from MARA
+  SELECT * FROM mara INTO TABLE it_materials.
+  IF sy-subrc <> 0.
+    PERFORM handle_error USING 'Error loading material data from MARA'.
+  ELSE.
+    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
+  ENDIF.
+ENDFORM.
+
 PARAMETERS: p_num_orders TYPE i DEFAULT 10.
