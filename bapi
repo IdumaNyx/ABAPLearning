@@ -162,13 +162,13 @@ FORM simulate_bapi_orders.
         ls_order TYPE ty_order,
         ls_return TYPE bapiret2,  " Standard BAPI return structure
         it_return TYPE TABLE OF bapiret2,  " Declare return messages table
-        ls_order_header TYPE bapisdhd1.  " Correct BAPI order header structure
+        ls_order_header TYPE bapisdhead.  " Corrected BAPI order header structure
 
   DO p_o_num TIMES.
     " Generate a new random order
     PERFORM select_random_data CHANGING ls_order.
 
-    " Populate order header fields
+    " Populate order header fields using the correct structure
     CLEAR ls_order_header.
     ls_order_header-doc_type = 'TA'.  " Standard Order
     ls_order_header-sales_org = ls_order-sales_data-vkorg.
