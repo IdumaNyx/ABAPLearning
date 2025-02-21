@@ -162,7 +162,11 @@ FORM simulate_bapi_orders.
         ls_order TYPE ty_order,
         ls_return TYPE bapiret2,  " Standard BAPI return structure
         it_return TYPE TABLE OF bapiret2,  " Declare return messages table
-        ls_order_header TYPE bapisdhead.  " Corrected BAPI order header structure
+        ls_order_header TYPE bapisdhead,  " Correct BAPI order header structure
+        it_order_items  TYPE TABLE OF bapisditem,  " Sales order items
+        it_order_partners TYPE TABLE OF bapiparnr, " Sales order partners
+        ls_order_item  TYPE bapisditem,
+        ls_order_partner TYPE bapiparnr.
 
   DO p_o_num TIMES.
     " Generate a new random order
@@ -175,11 +179,29 @@ FORM simulate_bapi_orders.
     ls_order_header-distr_chan = ls_order-sales_data-vtweg.
     ls_order_header-division = ls_order-sales_data-spart.
 
-    " Call the BAPI to simulate order creation
+    " Populate Order Item (Material)"
+    CLEAR: ls_order_item, it_order_items.
+    ls_order_item-itm_number = '000010'.  " Item number (10)
+    ls_order_item-material = ls_order-material-matnr.
+    ls_order_item-plant = '1000'.  " Adjust plant code as per your system
+    ls_order_item-target_qty = ls_order-quantity.
+
+    APPEND ls_order_item TO it_order_items.
+
+    " Populate Order Partner (Customer)"
+    CLEAR: ls_order_partner, it_order_partners.
+    ls_order_partner-partn_role = 'AG'.  " Sold-to Party
+    ls_order_partner-partn_numb = ls_order-customer-kunnr.
+
+    APPEND ls_order_partner TO it_order_partners.
+
+    " Call the BAPI with all required parameters
     CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
       EXPORTING
         order_header_in = ls_order_header
       TABLES
+        order_items_in  = it_order_items
+        order_partners  = it_order_partners
         return          = it_return.
 
     " Check if the BAPI simulation was successful
@@ -197,6 +219,8 @@ FORM simulate_bapi_orders.
         EXPORTING
           order_header_in = ls_order_header
         TABLES
+          order_items_in  = it_order_items
+          order_partners  = it_order_partners
           return          = it_return.
 
       READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
