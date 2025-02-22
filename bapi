@@ -1,29 +1,49 @@
+*&---------------------------------------------------------------------*
+*& Report ZSIMULATE_BAPI_ORDERS
+*&---------------------------------------------------------------------*
+*& Changes :
+*& 1. Use sy-subrc
+*& 2. Report events
+*& 3. In-line declarations
+*& 4. Field symbol
+*& 5. Custom types
+*& 6. Selection screens
+*& 7. messages
+*& 8. Perform
+*& 9. Function modules (random numbers)
+*& 10. Comments
+*& 11. Error handling
+*& 12. Failed order table
+*&
+*&
+*&
+*&---------------------------------------------------------------------*
 REPORT z_simulate_bapi_orders.
 
 *---------------------------------------------------------------------
 * Custom Type Definitions
 *---------------------------------------------------------------------
-TYPES: BEGIN OF ty_customer.
+TYPES: BEGIN OF ty_customer,
   " Customer general data from KNA1
   kunnr TYPE kna1-kunnr,
   name1 TYPE kna1-name1,
 END OF ty_customer.
 
-TYPES: BEGIN OF ty_sales.
+TYPES: BEGIN OF ty_sales,
   " Customer sales area data from KNVV
   vkorg TYPE knvv-vkorg,
   vtweg TYPE knvv-vtweg,
   spart TYPE knvv-spart,
 END OF ty_sales.
 
-TYPES: BEGIN OF ty_material.
+TYPES: BEGIN OF ty_material,
   " Material data from MARA
   matnr TYPE mara-matnr,
   ersda TYPE mara-ersda,
   mtart TYPE mara-mtart,
 END OF ty_material.
 
-TYPES: BEGIN OF ty_order.
+TYPES: BEGIN OF ty_order,
   order_id   TYPE char10,
   customer   TYPE ty_customer,
   sales_data TYPE ty_sales,
@@ -40,8 +60,7 @@ DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
-PARAMETERS: p_num_orders TYPE i DEFAULT 10.
-
+PARAMETERS: p_o_num TYPE i DEFAULT 10.
 
 
 
@@ -51,7 +70,6 @@ PARAMETERS: p_num_orders TYPE i DEFAULT 10.
 DATA: it_customers  TYPE STANDARD TABLE OF kna1,
       it_sales_data TYPE STANDARD TABLE OF knvv,
       it_materials  TYPE STANDARD TABLE OF mara.
-
 
 *---------------------------------------------------------------------
 * Local Class for Error Handling
@@ -100,6 +118,9 @@ FORM load_master_data.
 ENDFORM.
 
 
+*---------------------------------------------------------------------
+* Form Routine to Select Random Data for an Order
+*---------------------------------------------------------------------
 FORM select_random_data CHANGING eo_order TYPE ty_order.
   DATA: lv_random_index TYPE i,
         lv_max_customers TYPE i VALUE 0,
@@ -155,7 +176,7 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
 
 ENDFORM.
 
-!------------------------‐--------------------------------–--------------
+"-------------------------------------------------------------------------------------------------------------------------
 
 FORM simulate_bapi_orders.
   DATA: lv_count TYPE i,
@@ -163,9 +184,9 @@ FORM simulate_bapi_orders.
         ls_return TYPE bapiret2,  " Standard BAPI return structure
         it_return TYPE TABLE OF bapiret2,  " Declare return messages table
         ls_order_header TYPE bapisdhead,  " Correct BAPI order header structure
-        it_order_items  TYPE TABLE OF bapisditem,  " Sales order items
+        it_order_items  TYPE TABLE OF bapiitemin,  " Sales order items
         it_order_partners TYPE TABLE OF bapiparnr, " Sales order partners
-        ls_order_item  TYPE bapisditem,
+        ls_order_item  TYPE bapiitemin,
         ls_order_partner TYPE bapiparnr.
 
   DO p_o_num TIMES.
@@ -181,9 +202,9 @@ FORM simulate_bapi_orders.
 
     " Populate Order Item (Material)"
     CLEAR: ls_order_item, it_order_items.
-    ls_order_item-itm_number = '000010'.  " Item number (10)
+   " ls_order_item-itm_number = '000010'.  " Item number (10)
     ls_order_item-material = ls_order-material-matnr.
-    ls_order_item-plant = '1000'.  " Adjust plant code as per your system
+   " ls_order_item-plant = '1000'.  " Adjust plant code as per your system
     ls_order_item-target_qty = ls_order-quantity.
 
     APPEND ls_order_item TO it_order_items.
@@ -202,7 +223,7 @@ FORM simulate_bapi_orders.
       TABLES
         order_items_in  = it_order_items
         order_partners  = it_order_partners
-        return          = it_return.
+        messagetable          = it_return.
 
     " Check if the BAPI simulation was successful
     READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
@@ -221,7 +242,7 @@ FORM simulate_bapi_orders.
         TABLES
           order_items_in  = it_order_items
           order_partners  = it_order_partners
-          return          = it_return.
+          messagetable          = it_return.
 
       READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
       IF sy-subrc = 0.
@@ -239,6 +260,8 @@ FORM simulate_bapi_orders.
 
   ENDDO.
 ENDFORM.
+
+
 
 
 START-OF-SELECTION.
@@ -263,6 +286,3 @@ FORM display_results.
              ls_fail_order-quantity.
   ENDLOOP.
 ENDFORM.
-
-
-
