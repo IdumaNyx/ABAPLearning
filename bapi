@@ -286,3 +286,142 @@ FORM display_results.
              ls_fail_order-quantity.
   ENDLOOP.
 ENDFORM.
+
+
+
+
+
+=-------------------------------------------------------------------------------
+
+
+FORM load_master_data.
+  " Create an instance of the error handler class
+  DATA(lo_error) = NEW lcl_error_handler( ).
+
+  " Load customer general data from KNA1
+  SELECT * FROM kna1 INTO TABLE @DATA(it_customers).
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading customer data from KNA1' ).
+  ELSE.
+    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
+  ENDIF.
+
+  " Load customer sales area data from KNVV
+  SELECT * FROM knvv INTO TABLE @DATA(it_sales_data).
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
+  ELSE.
+    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
+  ENDIF.
+
+  " Load material data from MARA
+  SELECT * FROM mara INTO TABLE @DATA(it_materials).
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading material data from MARA' ).
+  ELSE.
+    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
+  ENDIF.
+ENDFORM.
+
+
+==========================================================
+
+FORM select_random_data CHANGING eo_order TYPE ty_order.
+  " Convert SY-UZEIT (HHMMSS) to an integer for the seed
+  DATA(lv_seed) = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
+
+  " Get table sizes
+  DATA(lv_max_customers) = LINES( it_customers ).
+  DATA(lv_max_sales) = LINES( it_sales_data ).
+  DATA(lv_max_materials) = LINES( it_materials ).
+
+  " Error handling if tables are empty
+  IF lv_max_customers = 0 OR lv_max_sales = 0 OR lv_max_materials = 0.
+    MESSAGE 'One or more master data tables are empty!' TYPE 'E'.
+  ENDIF.
+
+  " Random Selection from Customer Data
+  DATA(lo_random_customer) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_customers ).
+  DATA(lv_random_index) = lo_random_customer->get_next( ).
+  READ TABLE it_customers INDEX lv_random_index INTO eo_order-customer.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random customer' TYPE 'E'.
+  ENDIF.
+
+  " Random Selection from Sales Area Data
+  DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
+  lv_random_index = lo_random_sales->get_next( ).
+  READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random sales area' TYPE 'E'.
+  ENDIF.
+
+  " Random Selection from Material Data
+  DATA(lo_random_material) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_materials ).
+  lv_random_index = lo_random_material->get_next( ).
+  DATA(ls_material) = VALUE mara( ).
+  READ TABLE it_materials INDEX lv_random_index INTO ls_material.
+  IF sy-subrc = 0.
+    eo_order-material-matnr = ls_material-matnr.
+    eo_order-material-ersda = ls_material-ersda.
+    eo_order-material-mtart = ls_material-mtart.
+  ELSE.
+    MESSAGE 'Error selecting random material' TYPE 'E'.
+  ENDIF.
+
+  " Generate a Random Quantity (Between 1 and 100)
+  DATA(lo_random_qty) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 ).
+  eo_order-quantity = lo_random_qty->get_next( ).
+ENDFORM.
+
+==================================================================
+
+
+FORM simulate_bapi_orders.
+  DO p_o_num TIMES.
+    " Generate a new random order
+    DATA(ls_order) = VALUE ty_order( ).
+    PERFORM select_random_data CHANGING ls_order.
+
+    " Populate order header fields
+    DATA(ls_order_header) = VALUE bapisdhead( 
+      doc_type = 'TA' 
+      sales_org = ls_order-sales_data-vkorg 
+      distr_chan = ls_order-sales_data-vtweg 
+      division = ls_order-sales_data-spart 
+    ).
+
+    " Populate Order Items
+    DATA(it_order_items) = VALUE TABLE OF bapisditem( 
+      ( itm_number = '000010' 
+        material = ls_order-material-matnr 
+        plant = '1000' 
+        target_qty = ls_order-quantity ) 
+    ).
+
+    " Populate Order Partners
+    DATA(it_order_partners) = VALUE TABLE OF bapiparnr(
+      ( partn_role = 'AG' partn_numb = ls_order-customer-kunnr ) 
+      ( partn_role = 'WE' partn_numb = ls_order-customer-kunnr ) 
+      ( partn_role = 'RE' partn_numb = ls_order-customer-kunnr ) 
+    ).
+
+    " Call BAPI
+    DATA(it_return) = VALUE TABLE OF bapiret2( ).
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+      EXPORTING
+        order_header_in = ls_order_header
+      TABLES
+        order_items_in  = it_order_items
+        order_partners  = it_order_partners
+        return          = it_return.
+
+    " Check for errors
+    READ TABLE it_return INTO DATA(ls_return) WITH KEY type = 'E'.
+    IF sy-subrc = 0.
+      APPEND ls_order TO it_failed_orders.
+    ELSE.
+      APPEND ls_order TO it_success_orders.
+    ENDIF.
+  ENDDO.
+ENDFORM.
