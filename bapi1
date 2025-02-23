@@ -3,6 +3,12 @@
 "* Purpose: Class Definitions
 "*----------------------------------------------------------------------*
 
+" Define custom table types for database tables
+TYPES: 
+  ty_kna1_tab TYPE TABLE OF kna1 WITH DEFAULT KEY,
+  ty_knvv_tab TYPE TABLE OF knvv WITH DEFAULT KEY,
+  ty_mara_tab TYPE TABLE OF mara WITH DEFAULT KEY.
+
 CLASS lcl_error_handler DEFINITION.
   PUBLIC SECTION.
     METHODS: handle_error IMPORTING iv_msg TYPE string.
@@ -18,9 +24,9 @@ CLASS lcl_data_loader DEFINITION.
   PUBLIC SECTION.
     METHODS:
       load_master_data IMPORTING 
-        eo_customers  TYPE TABLE OF kna1
-        eo_sales_data TYPE TABLE OF knvv
-        eo_materials  TYPE TABLE OF mara.
+        eo_customers  TYPE ty_kna1_tab
+        eo_sales_data TYPE ty_knvv_tab
+        eo_materials  TYPE ty_mara_tab.
 ENDCLASS.
 
 CLASS lcl_data_loader IMPLEMENTATION.
@@ -54,15 +60,14 @@ CLASS lcl_data_loader IMPLEMENTATION.
 ENDCLASS.
 
 
-
 REPORT ZSIMULATE_BAPI_ORDERS.
 
 INCLUDE ZSIMULATE_BAPI_CLASSES.
 
 DATA: lo_data_loader TYPE REF TO lcl_data_loader,
-      it_customers  TYPE STANDARD TABLE OF kna1,
-      it_sales_data TYPE STANDARD TABLE OF knvv,
-      it_materials  TYPE STANDARD TABLE OF mara.
+      it_customers  TYPE ty_kna1_tab,
+      it_sales_data TYPE ty_knvv_tab,
+      it_materials  TYPE ty_mara_tab.
 
 START-OF-SELECTION.
   CREATE OBJECT lo_data_loader.
@@ -74,3 +79,4 @@ START-OF-SELECTION.
 
   PERFORM simulate_bapi_orders.
   PERFORM display_results.
+
