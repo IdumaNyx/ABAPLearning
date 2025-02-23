@@ -29,10 +29,44 @@ REPORT z_simulate_bapi_orders.
 INCLUDE ZINCLUDE_TYPES.   " Include custom type definitions
 INCLUDE ZINCLUDE_GLOBALS. " Include global data declarations
 
+DATA(lo_error) = NEW zcl_error_handler( ).  " Instantiate error handler
+
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
 PARAMETERS: p_o_num TYPE i DEFAULT 10.
+
+*---------------------------------------------------------------------
+* Form Routine to Load Master Data with Error Handling
+*---------------------------------------------------------------------
+FORM load_master_data.
+
+  " Load customer general data from KNA1
+  SELECT * FROM kna1 INTO TABLE it_customers.
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading customer data from KNA1' ).
+  ELSE.
+    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
+  ENDIF.
+
+  " Load customer sales area data from KNVV
+  SELECT * FROM knvv INTO TABLE it_sales_data.
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
+  ELSE.
+    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
+  ENDIF.
+
+  " Load material data from MARA
+  SELECT * FROM mara INTO TABLE it_materials.
+  IF sy-subrc <> 0.
+    lo_error->handle_error( 'Error loading material data from MARA' ).
+  ELSE.
+    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
+  ENDIF.
+
+ENDFORM.
+
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -43,3 +77,38 @@ DATA: it_customers  TYPE STANDARD TABLE OF kna1,
       it_sales_data TYPE STANDARD TABLE OF knvv,
       it_materials  TYPE STANDARD TABLE OF mara.
 -----------------------------------------------------------------------------------------------------------------------------------------------------
+
+CLASS zcl_error_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS: handle_error IMPORTING iv_msg TYPE string.
+ENDCLASS.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+CLASS zcl_error_handler IMPLEMENTATION.
+  METHOD handle_error.
+    MESSAGE iv_msg TYPE 'E'.  " Display error messages properly
+  ENDMETHOD.
+ENDCLASS.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
