@@ -30,6 +30,7 @@ INCLUDE ZINCLUDE_TYPES.   " Include custom type definitions
 INCLUDE ZINCLUDE_GLOBALS. " Include global data declarations
 
 DATA(lo_error) = NEW zcl_error_handler( ).  " Instantiate error handler
+DATA(lo_master_data) = NEW zcl_master_data( ). " Instantiate master data handler
 
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
@@ -37,35 +38,16 @@ DATA(lo_error) = NEW zcl_error_handler( ).  " Instantiate error handler
 PARAMETERS: p_o_num TYPE i DEFAULT 10.
 
 *---------------------------------------------------------------------
-* Form Routine to Load Master Data with Error Handling
+* Start of Selection - Load Master Data
 *---------------------------------------------------------------------
-FORM load_master_data.
+START-OF-SELECTION.
+  lo_master_data->load_all( lo_error ).  " Load all master data
 
-  " Load customer general data from KNA1
-  SELECT * FROM kna1 INTO TABLE it_customers.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading customer data from KNA1' ).
-  ELSE.
-    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
-  ENDIF.
+  PERFORM simulate_bapi_orders.
 
-  " Load customer sales area data from KNVV
-  SELECT * FROM knvv INTO TABLE it_sales_data.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
-  ELSE.
-    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
-  ENDIF.
+  " Display results
+  PERFORM display_results.
 
-  " Load material data from MARA
-  SELECT * FROM mara INTO TABLE it_materials.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading material data from MARA' ).
-  ELSE.
-    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
-  ENDIF.
-
-ENDFORM.
 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
@@ -92,9 +74,57 @@ CLASS zcl_error_handler IMPLEMENTATION.
 ENDCLASS.
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
+CLASS zcl_master_data DEFINITION.
+  PUBLIC SECTION.
+    DATA: it_customers  TYPE STANDARD TABLE OF kna1,
+          it_sales_data TYPE STANDARD TABLE OF knvv,
+          it_materials  TYPE STANDARD TABLE OF mara.
+
+    METHODS:
+      load_customers IMPORTING io_error TYPE REF TO zcl_error_handler,
+      load_sales_data IMPORTING io_error TYPE REF TO zcl_error_handler,
+      load_materials IMPORTING io_error TYPE REF TO zcl_error_handler,
+      load_all IMPORTING io_error TYPE REF TO zcl_error_handler.
+ENDCLASS.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
+CLASS zcl_master_data IMPLEMENTATION.
+
+  METHOD load_customers.
+    SELECT * FROM kna1 INTO TABLE it_customers.
+    IF sy-subrc <> 0.
+      io_error->handle_error( 'Error loading customer data from KNA1' ).
+    ELSE.
+      WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD load_sales_data.
+    SELECT * FROM knvv INTO TABLE it_sales_data.
+    IF sy-subrc <> 0.
+      io_error->handle_error( 'Error loading sales area data from KNVV' ).
+    ELSE.
+      WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD load_materials.
+    SELECT * FROM mara INTO TABLE it_materials.
+    IF sy-subrc <> 0.
+      io_error->handle_error( 'Error loading material data from MARA' ).
+    ELSE.
+      WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD load_all.
+    load_customers( io_error ).
+    load_sales_data( io_error ).
+    load_materials( io_error ).
+  ENDMETHOD.
+
+ENDCLASS.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
