@@ -22,13 +22,24 @@ TYPES: BEGIN OF ty_order,
   material   TYPE ty_material,
   quantity   TYPE i,
 END OF ty_order.
-
+------------------------------------------------------------------------------------------------------------------------------
 
 REPORT z_simulate_bapi_orders.
 
-INCLUDE ZINCLUDE_TYPES.  " Include custom type definitions
+INCLUDE ZINCLUDE_TYPES.   " Include custom type definitions
+INCLUDE ZINCLUDE_GLOBALS. " Include global data declarations
 
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
 PARAMETERS: p_o_num TYPE i DEFAULT 10.
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
+      it_failed_orders  TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY.
+
+DATA: it_customers  TYPE STANDARD TABLE OF kna1,
+      it_sales_data TYPE STANDARD TABLE OF knvv,
+      it_materials  TYPE STANDARD TABLE OF mara.
+-----------------------------------------------------------------------------------------------------------------------------------------------------
