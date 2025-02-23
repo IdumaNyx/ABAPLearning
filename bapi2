@@ -57,3 +57,66 @@ REPORT ZSIMULATE_BAPI_ORDERS4.
 
 INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations
 INCLUDE ZSIMULATE_BAPI_ORDERS4_SEL.  " Selection-Screen Elements
+
+________
+
+*&---------------------------------------------------------------------*
+*& Include ZSIMULATE_BAPI_ORDERS4_F01
+*& Subroutines (FORM Routines)
+*&---------------------------------------------------------------------*
+
+FORM select_random_data CHANGING eo_order TYPE zcl_order_simulator=>ty_order.
+  DATA: lv_random_index TYPE i,
+        lv_max_customers TYPE i VALUE 0,
+        lv_max_sales TYPE i VALUE 0,
+        lv_max_materials TYPE i VALUE 0,
+        lv_seed TYPE i.
+
+  lv_seed = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
+
+  lv_max_customers = LINES( go_order_simulator->it_customers ).
+  lv_max_sales = LINES( go_order_simulator->it_sales_data ).
+  lv_max_materials = LINES( go_order_simulator->it_materials ).
+
+  IF lv_max_customers = 0 OR lv_max_sales = 0 OR lv_max_materials = 0.
+    MESSAGE 'One or more master data tables are empty!' TYPE 'E'.
+  ENDIF.
+
+  DATA(lo_random_customer) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_customers ).
+  lv_random_index = lo_random_customer->get_next( ).
+  READ TABLE go_order_simulator->it_customers INDEX lv_random_index INTO eo_order-customer.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random customer' TYPE 'E'.
+  ENDIF.
+
+  DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
+  lv_random_index = lo_random_sales->get_next( ).
+  READ TABLE go_order_simulator->it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
+  IF sy-subrc <> 0.
+    MESSAGE 'Error selecting random sales area' TYPE 'E'.
+  ENDIF.
+
+  DATA(lo_random_material) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_materials ).
+  lv_random_index = lo_random_material->get_next( ).
+  DATA: ls_material TYPE mara.
+  READ TABLE go_order_simulator->it_materials INDEX lv_random_index INTO ls_material.
+  IF sy-subrc = 0.
+    eo_order-material-matnr = ls_material-matnr.
+    eo_order-material-ersda = ls_material-ersda.
+    eo_order-material-mtart = ls_material-mtart.
+  ELSE.
+    MESSAGE 'Error selecting random material' TYPE 'E'.
+  ENDIF.
+
+  DATA(lo_random_qty) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 ).
+  eo_order-quantity = lo_random_qty->get_next( ).
+
+ENDFORM.
+
+_________
+
+REPORT ZSIMULATE_BAPI_ORDERS4.
+
+INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations
+INCLUDE ZSIMULATE_BAPI_ORDERS4_SEL.  " Selection-Screen Elements
+INCLUDE ZSIMULATE_BAPI_ORDERS4_F01.  " Subroutines (FORM Routines)
