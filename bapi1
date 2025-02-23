@@ -30,9 +30,6 @@ INCLUDE ZINCLUDE_TYPES.   " Include custom type definitions
 INCLUDE ZINCLUDE_GLOBALS. " Include global data declarations
 INCLUDE ZINCLUDE_FORMS.   " Include form routines
 
-DATA(lo_error) = NEW zcl_error_handler( ).  " Instantiate error handler
-DATA(lo_master_data) = NEW zcl_master_data( ). " Instantiate master data handler
-
 *---------------------------------------------------------------------
 * Selection Screen Parameter: Number of orders to simulate
 *---------------------------------------------------------------------
@@ -42,9 +39,18 @@ PARAMETERS: p_o_num TYPE i DEFAULT 10.
 * Start of Selection - Load Master Data
 *---------------------------------------------------------------------
 START-OF-SELECTION.
+  DATA(lo_error) = NEW zcl_error_handler( ).
+  DATA(lo_master_data) = NEW zcl_master_data( ).
+  
   lo_master_data->load_all( lo_error ).  " Load all master data
 
-  PERFORM simulate_bapi_orders.
+  DATA(lo_random_generator) = NEW zcl_random_generator(
+    it_cust = lo_master_data->it_customers
+    it_sales = lo_master_data->it_sales_data
+    it_mat = lo_master_data->it_materials
+  ).
+
+  PERFORM simulate_bapi_orders USING lo_random_generator.
 
   " Display results
   PERFORM display_results.
@@ -128,33 +134,83 @@ ENDCLASS.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
-FORM display_results.
-  WRITE: / '--- Successful Orders ---'.
-  LOOP AT it_success_orders INTO DATA(ls_succ_order).
-    WRITE: / ls_succ_order-order_id,
-             ls_succ_order-customer-kunnr,
-             ls_succ_order-quantity.
-  ENDLOOP.
+FORM simulate_bapi_orders USING lo_random TYPE REF TO zcl_random_generator.
+  DATA: lv_count TYPE i,
+        ls_order TYPE ty_order.
 
-  WRITE: / '--- Failed Orders ---'.
-  LOOP AT it_failed_orders INTO DATA(ls_fail_order).
-    WRITE: / ls_fail_order-order_id,
-             ls_fail_order-customer-kunnr,
-             ls_fail_order-quantity.
-  ENDLOOP.
-ENDFORM.
+  DO p_o_num TIMES.
+    " Generate a new random order
+    ls_order = lo_random->select_random_order( ).
 
-FORM simulate_bapi_orders.
-  " Dummy implementation for now, to be refactored later
-  WRITE: / 'Simulating BAPI Orders...'.
+    " Store in successful orders for now (will handle failed orders later)
+    APPEND ls_order TO it_success_orders.
+  ENDDO.
 ENDFORM.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
-
+CLASS zcl_random_generator DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      constructor IMPORTING it_cust TYPE TABLE OF kna1
+                           it_sales TYPE TABLE OF knvv
+                           it_mat TYPE TABLE OF mara,
+      select_random_customer RETURNING VALUE(ro_customer) TYPE ty_customer,
+      select_random_sales_area RETURNING VALUE(ro_sales) TYPE ty_sales,
+      select_random_material RETURNING VALUE(ro_material) TYPE ty_material,
+      generate_random_quantity RETURNING VALUE(rv_quantity) TYPE i,
+      select_random_order RETURNING VALUE(ro_order) TYPE ty_order.
+      
+  PRIVATE SECTION.
+    DATA: it_customers TYPE TABLE OF kna1,
+          it_sales_data TYPE TABLE OF knvv,
+          it_materials TYPE TABLE OF mara.
+ENDCLASS.
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
+CLASS zcl_random_generator IMPLEMENTATION.
 
+  METHOD constructor.
+    me->it_customers = it_cust.
+    me->it_sales_data = it_sales.
+    me->it_materials = it_mat.
+  ENDMETHOD.
+
+  METHOD select_random_customer.
+    DATA lv_random_index TYPE i.
+    DATA(lo_random) = cl_abap_random_int=>create( seed = sy-uzeit min = 1 max = LINES( it_customers ) ).
+    lv_random_index = lo_random->get_next( ).
+    READ TABLE it_customers INDEX lv_random_index INTO ro_customer.
+  ENDMETHOD.
+
+  METHOD select_random_sales_area.
+    DATA lv_random_index TYPE i.
+    DATA(lo_random) = cl_abap_random_int=>create( seed = sy-uzeit min = 1 max = LINES( it_sales_data ) ).
+    lv_random_index = lo_random->get_next( ).
+    READ TABLE it_sales_data INDEX lv_random_index INTO ro_sales.
+  ENDMETHOD.
+
+  METHOD select_random_material.
+    DATA lv_random_index TYPE i.
+    DATA(lo_random) = cl_abap_random_int=>create( seed = sy-uzeit min = 1 max = LINES( it_materials ) ).
+    lv_random_index = lo_random->get_next( ).
+    READ TABLE it_materials INDEX lv_random_index INTO ro_material.
+  ENDMETHOD.
+
+  METHOD generate_random_quantity.
+    DATA(lo_random) = cl_abap_random_int=>create( seed = sy-uzeit min = 1 max = 100 ).
+    rv_quantity = lo_random->get_next( ).
+  ENDMETHOD.
+
+  METHOD select_random_order.
+    CLEAR ro_order.
+    ro_order-customer = select_random_customer( ).
+    ro_order-sales_data = select_random_sales_area( ).
+    ro_order-material = select_random_material( ).
+    ro_order-quantity = generate_random_quantity( ).
+  ENDMETHOD.
+
+ENDCLASS.
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 
