@@ -68,3 +68,114 @@ METHOD display_results.
 ENDMETHOD.
 
 ENDCLASS.
+________________________________________________
+
+METHOD load_master_data.
+  " Load customer general data from KNA1
+  SELECT * FROM kna1 INTO TABLE it_customers.
+  IF sy-subrc <> 0.
+    " Handle error
+    WRITE: / 'Error loading customer data from KNA1'.
+  ELSE.
+    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
+  ENDIF.
+
+  " Load customer sales area data from KNVV
+  SELECT * FROM knvv INTO TABLE it_sales_data.
+  IF sy-subrc <> 0.
+    " Handle error
+    WRITE: / 'Error loading sales area data from KNVV'.
+  ELSE.
+    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
+  ENDIF.
+
+  " Load material data from MARA
+  SELECT * FROM mara INTO TABLE it_materials.
+  IF sy-subrc <> 0.
+    " Handle error
+    WRITE: / 'Error loading material data from MARA'.
+  ELSE.
+    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
+  ENDIF.
+ENDMETHOD.
+
+__________________________________<___
+
+METHOD simulate_orders.
+  DATA: lv_count TYPE i,
+        ls_order TYPE ty_order,
+        ls_return TYPE bapiret2,
+        it_return TYPE TABLE OF bapiret2,
+        ls_order_header TYPE bapisdhead,
+        it_order_items TYPE TABLE OF bapiitemin,
+        it_order_partners TYPE TABLE OF bapiparnr,
+        ls_order_item TYPE bapiitemin,
+        ls_order_partner TYPE bapiparnr.
+
+  DO p_o_num TIMES.
+    " Generate a new random order
+    PERFORM select_random_data CHANGING ls_order.
+
+    " Populate order header fields using the correct structure  
+    CLEAR ls_order_header.  
+    ls_order_header-doc_type = 'TA'.  
+    ls_order_header-sales_org = ls_order-sales_data-vkorg.  
+    ls_order_header-distr_chan = ls_order-sales_data-vtweg.  
+    ls_order_header-division = ls_order-sales_data-spart.  
+
+    " Populate Order Item (Material)"  
+    CLEAR: ls_order_item, it_order_items.
+
+    ls_order_item-material = ls_order-material-matnr.
+    ls_order_item-target_qty = ls_order-quantity.
+
+    APPEND ls_order_item TO it_order_items.  
+
+    " Populate Order Partner (Customer)"  
+    CLEAR: ls_order_partner, it_order_partners.  
+    ls_order_partner-partn_role = 'AG'.  
+    ls_order_partner-partn_numb = ls_order-customer-kunnr.  
+
+    APPEND ls_order_partner TO it_order_partners.  
+
+    " Call the BAPI with all required parameters  
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'  
+      EXPORTING  
+        order_header_in = ls_order_header  
+      TABLES  
+        order_items_in = it_order_items  
+        order_partners = it_order_partners  
+        messagetable = it_return.  
+
+    " Check if the BAPI simulation was successful  
+    READ TABLE it_return INTO ls_return WITH KEY type = 'E'.  
+    IF sy-subrc = 0.  
+      " Order failed, store in failed orders table  
+      APPEND ls_order TO it_failed_orders.  
+
+      " Retry with a new order  
+      CLEAR ls_order.  
+      PERFORM select_random_data CHANGING ls_order.  
+
+      " Re-attempt BAPI  
+      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'  
+        EXPORTING  
+          order_header_in = ls_order_header  
+        TABLES  
+          order_items_in = it_order_items  
+          order_partners = it_order_partners  
+          messagetable = it_return.  
+
+      READ TABLE it_return INTO ls_return WITH KEY type = 'E'.  
+      IF sy-subrc = 0.  
+        APPEND ls_order TO it_failed_orders.  
+      ELSE.  
+        APPEND ls_order TO it_success_orders.  
+      ENDIF.  
+
+    ELSE.  
+      APPEND ls_order TO it_success_orders.  
+    ENDIF.
+
+  ENDDO.
+ENDMETHOD.
