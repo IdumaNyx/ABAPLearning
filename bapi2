@@ -42,3 +42,18 @@ _______
 REPORT ZSIMULATE_BAPI_ORDERS4.
 
 INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations
+
+______
+*&---------------------------------------------------------------------*
+*& Include ZSIMULATE_BAPI_ORDERS4_SEL
+*& Selection-Screen Elements
+*&---------------------------------------------------------------------*
+
+PARAMETERS: p_o_num TYPE i DEFAULT 10.
+
+________
+
+REPORT ZSIMULATE_BAPI_ORDERS4.
+
+INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations
+INCLUDE ZSIMULATE_BAPI_ORDERS4_SEL.  " Selection-Screen Elements
