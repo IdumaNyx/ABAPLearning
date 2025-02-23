@@ -9,6 +9,16 @@ TYPES:
   ty_knvv_tab TYPE TABLE OF knvv WITH DEFAULT KEY,
   ty_mara_tab TYPE TABLE OF mara WITH DEFAULT KEY.
 
+" Define structure for the generated order
+TYPES: BEGIN OF ty_order,
+         order_id   TYPE char10,
+         customer   TYPE kna1,
+         sales_data TYPE knvv,
+         material   TYPE mara,
+         quantity   TYPE i,
+       END OF ty_order.
+
+" Error handling class
 CLASS lcl_error_handler DEFINITION.
   PUBLIC SECTION.
     METHODS: handle_error IMPORTING iv_msg TYPE string.
@@ -20,6 +30,7 @@ CLASS lcl_error_handler IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
+" Data loading class
 CLASS lcl_data_loader DEFINITION.
   PUBLIC SECTION.
     METHODS:
@@ -29,7 +40,6 @@ CLASS lcl_data_loader DEFINITION.
         eo_materials  TYPE ty_mara_tab.
 ENDCLASS.
 
-
 CLASS lcl_data_loader IMPLEMENTATION.
   METHOD load_master_data.
     DATA(lo_error) = NEW lcl_error_handler( ).
@@ -38,49 +48,136 @@ CLASS lcl_data_loader IMPLEMENTATION.
     SELECT * FROM kna1 INTO TABLE eo_customers.
     IF sy-subrc <> 0.
       lo_error->handle_error( 'Error loading customer data from KNA1' ).
-    ELSE.
-      WRITE: / 'KNA1 data loaded: ', LINES( eo_customers ), ' records.'.
     ENDIF.
 
     " Load customer sales area data from KNVV
     SELECT * FROM knvv INTO TABLE eo_sales_data.
     IF sy-subrc <> 0.
       lo_error->handle_error( 'Error loading sales area data from KNVV' ).
-    ELSE.
-      WRITE: / 'KNVV data loaded: ', LINES( eo_sales_data ), ' records.'.
     ENDIF.
 
     " Load material data from MARA
     SELECT * FROM mara INTO TABLE eo_materials.
     IF sy-subrc <> 0.
       lo_error->handle_error( 'Error loading material data from MARA' ).
-    ELSE.
-      WRITE: / 'MARA data loaded: ', LINES( eo_materials ), ' records.'.
     ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+" Order generation class
+CLASS lcl_order_generator DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      generate_random_order IMPORTING
+        it_customers  TYPE ty_kna1_tab
+        it_sales_data TYPE ty_knvv_tab
+        it_materials  TYPE ty_mara_tab
+      RETURNING VALUE(ro_order) TYPE ty_order.
+ENDCLASS.
+
+CLASS lcl_order_generator IMPLEMENTATION.
+  METHOD generate_random_order.
+    DATA: lv_random_index TYPE i,
+          lv_max_customers TYPE i VALUE LINES( it_customers ),
+          lv_max_sales TYPE i VALUE LINES( it_sales_data ),
+          lv_max_materials TYPE i VALUE LINES( it_materials ),
+          lv_seed TYPE i.
+
+    " Use system time to generate a seed for randomness
+    lv_seed = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
+
+    " Select a random customer
+    IF lv_max_customers > 0.
+      DATA(lo_random_customer) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_customers ).
+      lv_random_index = lo_random_customer->get_next( ).
+      READ TABLE it_customers INTO ro_order-customer INDEX lv_random_index.
+    ENDIF.
+
+    " Select a random sales area
+    IF lv_max_sales > 0.
+      DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
+      lv_random_index = lo_random_sales->get_next( ).
+      READ TABLE it_sales_data INTO ro_order-sales_data INDEX lv_random_index.
+    ENDIF.
+
+    " Select a random material
+    IF lv_max_materials > 0.
+      DATA(lo_random_material) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_materials ).
+      lv_random_index = lo_random_material->get_next( ).
+      READ TABLE it_materials INTO ro_order-material INDEX lv_random_index.
+    ENDIF.
+
+    " Generate a random quantity between 1 and 100
+    DATA(lo_random_qty) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 ).
+    ro_order-quantity = lo_random_qty->get_next( ).
+
   ENDMETHOD.
 ENDCLASS.
 
 
 
-REPORT ZSIMULATE_BAPI_ORDERS.
-
-INCLUDE ZSIMULATE_BAPI_CLASSES.
-
-DATA: lo_data_loader TYPE REF TO lcl_data_loader,
-      it_customers  TYPE ty_kna1_tab,
-      it_sales_data TYPE ty_knvv_tab,
-      it_materials  TYPE ty_mara_tab.
-
-START-OF-SELECTION.
-  CREATE OBJECT lo_data_loader.
-  lo_data_loader->load_master_data(
-    CHANGING
-      eo_customers  = it_customers
-      eo_sales_data = it_sales_data
-      eo_materials  = it_materials
-  ).
-
-  PERFORM simulate_bapi_orders.
-  PERFORM display_results.
 
 
+
+
+
+DATA: lo_order_generator TYPE REF TO lcl_order_generator.
+
+FORM simulate_bapi_orders.
+  DATA: lv_count TYPE i,
+        ls_order TYPE ty_order,
+        ls_return TYPE bapiret2,
+        it_return TYPE TABLE OF bapiret2,
+        ls_order_header TYPE bapisdhead,
+        it_order_items  TYPE TABLE OF bapiitemin,
+        it_order_partners TYPE TABLE OF bapiparnr,
+        ls_order_item  TYPE bapiitemin,
+        ls_order_partner TYPE bapiparnr.
+
+  CREATE OBJECT lo_order_generator.
+
+  DO p_o_num TIMES.
+    " Generate a new random order
+    ls_order = lo_order_generator->generate_random_order(
+      it_customers  = it_customers
+      it_sales_data = it_sales_data
+      it_materials  = it_materials
+    ).
+
+    " Populate order header fields
+    CLEAR ls_order_header.
+    ls_order_header-doc_type = 'TA'.
+    ls_order_header-sales_org = ls_order-sales_data-vkorg.
+    ls_order_header-distr_chan = ls_order-sales_data-vtweg.
+    ls_order_header-division = ls_order-sales_data-spart.
+
+    " Populate Order Item
+    CLEAR: ls_order_item, it_order_items.
+    ls_order_item-material = ls_order-material-matnr.
+    ls_order_item-target_qty = ls_order-quantity.
+    APPEND ls_order_item TO it_order_items.
+
+    " Populate Order Partner (Customer)
+    CLEAR: ls_order_partner, it_order_partners.
+    ls_order_partner-partn_role = 'AG'.
+    ls_order_partner-partn_numb = ls_order-customer-kunnr.
+    APPEND ls_order_partner TO it_order_partners.
+
+    " Call BAPI
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+      EXPORTING
+        order_header_in = ls_order_header
+      TABLES
+        order_items_in  = it_order_items
+        order_partners  = it_order_partners
+        messagetable    = it_return.
+
+    " Check if the BAPI simulation was successful
+    READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
+    IF sy-subrc = 0.
+      APPEND ls_order TO it_failed_orders.
+    ELSE.
+      APPEND ls_order TO it_success_orders.
+    ENDIF.
+  ENDDO.
+ENDFORM.
