@@ -1,70 +1,3 @@
-"*----------------------------------------------------------------------*
-"* Include: ZSIMULATE_BAPI_CLASSES
-"* Purpose: Class Definitions
-"*----------------------------------------------------------------------*
-
-" Define custom table types for database tables
-TYPES: 
-  ty_kna1_tab TYPE TABLE OF kna1 WITH DEFAULT KEY,
-  ty_knvv_tab TYPE TABLE OF knvv WITH DEFAULT KEY,
-  ty_mara_tab TYPE TABLE OF mara WITH DEFAULT KEY.
-
-" Define structure for the generated order
-TYPES: BEGIN OF ty_order,
-         order_id   TYPE char10,
-         customer   TYPE kna1,
-         sales_data TYPE knvv,
-         material   TYPE mara,
-         quantity   TYPE i,
-       END OF ty_order.
-
-" Error handling class
-CLASS lcl_error_handler DEFINITION.
-  PUBLIC SECTION.
-    METHODS: handle_error IMPORTING iv_msg TYPE string.
-ENDCLASS.
-
-CLASS lcl_error_handler IMPLEMENTATION.
-  METHOD handle_error.
-    MESSAGE iv_msg TYPE 'E'.
-  ENDMETHOD.
-ENDCLASS.
-
-" Data loading class
-CLASS lcl_data_loader DEFINITION.
-  PUBLIC SECTION.
-    METHODS:
-      load_master_data CHANGING
-        eo_customers  TYPE ty_kna1_tab
-        eo_sales_data TYPE ty_knvv_tab
-        eo_materials  TYPE ty_mara_tab.
-ENDCLASS.
-
-CLASS lcl_data_loader IMPLEMENTATION.
-  METHOD load_master_data.
-    DATA(lo_error) = NEW lcl_error_handler( ).
-
-    " Load customer general data from KNA1
-    SELECT * FROM kna1 INTO TABLE eo_customers.
-    IF sy-subrc <> 0.
-      lo_error->handle_error( 'Error loading customer data from KNA1' ).
-    ENDIF.
-
-    " Load customer sales area data from KNVV
-    SELECT * FROM knvv INTO TABLE eo_sales_data.
-    IF sy-subrc <> 0.
-      lo_error->handle_error( 'Error loading sales area data from KNVV' ).
-    ENDIF.
-
-    " Load material data from MARA
-    SELECT * FROM mara INTO TABLE eo_materials.
-    IF sy-subrc <> 0.
-      lo_error->handle_error( 'Error loading material data from MARA' ).
-    ENDIF.
-  ENDMETHOD.
-ENDCLASS.
-
-" Order generation class
 CLASS lcl_order_generator DEFINITION.
   PUBLIC SECTION.
     METHODS:
@@ -117,10 +50,6 @@ ENDCLASS.
 
 
 
-
-
-
-
 DATA: lo_order_generator TYPE REF TO lcl_order_generator.
 
 FORM simulate_bapi_orders.
@@ -134,10 +63,11 @@ FORM simulate_bapi_orders.
         ls_order_item  TYPE bapiitemin,
         ls_order_partner TYPE bapiparnr.
 
+  " Create the order generator object
   CREATE OBJECT lo_order_generator.
 
   DO p_o_num TIMES.
-    " Generate a new random order
+    " Generate a new random order using the class
     ls_order = lo_order_generator->generate_random_order(
       it_customers  = it_customers
       it_sales_data = it_sales_data
