@@ -28,6 +28,7 @@ REPORT z_simulate_bapi_orders.
 
 INCLUDE ZINCLUDE_TYPES.   " Include custom type definitions
 INCLUDE ZINCLUDE_GLOBALS. " Include global data declarations
+INCLUDE ZINCLUDE_FORMS.   " Include form routines
 
 DATA(lo_error) = NEW zcl_error_handler( ).  " Instantiate error handler
 DATA(lo_master_data) = NEW zcl_master_data( ). " Instantiate master data handler
@@ -47,7 +48,6 @@ START-OF-SELECTION.
 
   " Display results
   PERFORM display_results.
-
 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
@@ -128,6 +128,26 @@ ENDCLASS.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
+FORM display_results.
+  WRITE: / '--- Successful Orders ---'.
+  LOOP AT it_success_orders INTO DATA(ls_succ_order).
+    WRITE: / ls_succ_order-order_id,
+             ls_succ_order-customer-kunnr,
+             ls_succ_order-quantity.
+  ENDLOOP.
+
+  WRITE: / '--- Failed Orders ---'.
+  LOOP AT it_failed_orders INTO DATA(ls_fail_order).
+    WRITE: / ls_fail_order-order_id,
+             ls_fail_order-customer-kunnr,
+             ls_fail_order-quantity.
+  ENDLOOP.
+ENDFORM.
+
+FORM simulate_bapi_orders.
+  " Dummy implementation for now, to be refactored later
+  WRITE: / 'Simulating BAPI Orders...'.
+ENDFORM.
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
