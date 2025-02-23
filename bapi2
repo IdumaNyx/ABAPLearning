@@ -1,0 +1,70 @@
+CLASS zcl_order_simulator DEFINITION
+  FINAL
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    METHODS: load_master_data,
+             simulate_orders,
+             display_results.
+
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_customer,
+             kunnr TYPE kna1-kunnr,
+             name1 TYPE kna1-name1,
+           END OF ty_customer,
+           BEGIN OF ty_sales,
+             vkorg TYPE knvv-vkorg,
+             vtweg TYPE knvv-vtweg,
+             spart TYPE knvv-spart,
+           END OF ty_sales,
+           BEGIN OF ty_material,
+             matnr TYPE mara-matnr,
+             ersda TYPE mara-ersda,
+             mtart TYPE mara-mtart,
+           END OF ty_material,
+           BEGIN OF ty_order,
+             order_id   TYPE char10,
+             customer   TYPE ty_customer,
+             sales_data TYPE ty_sales,
+             material   TYPE ty_material,
+             quantity   TYPE i,
+           END OF ty_order.
+
+    DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
+          it_failed_orders  TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
+          it_customers      TYPE STANDARD TABLE OF kna1,
+          it_sales_data     TYPE STANDARD TABLE OF knvv,
+          it_materials      TYPE STANDARD TABLE OF mara.
+ENDCLASS.
+
+CLASS zcl_order_simulator IMPLEMENTATION.
+
+METHOD load_master_data.
+  " Load customer general data from KNA1
+  SELECT * FROM kna1 INTO TABLE it_customers.
+  IF sy-subrc <> 0.
+    " Handle error
+  ENDIF.
+
+  " Load customer sales area data from KNVV
+  SELECT * FROM knvv INTO TABLE it_sales_data.
+  IF sy-subrc <> 0.
+    " Handle error
+  ENDIF.
+
+  " Load material data from MARA
+  SELECT * FROM mara INTO TABLE it_materials.
+  IF sy-subrc <> 0.
+    " Handle error
+  ENDIF.
+ENDMETHOD.
+
+METHOD simulate_orders.
+  " Simulation logic goes here
+ENDMETHOD.
+
+METHOD display_results.
+  " Display logic goes here
+ENDMETHOD.
+
+ENDCLASS.
