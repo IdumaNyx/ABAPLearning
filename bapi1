@@ -1,0 +1,76 @@
+"*----------------------------------------------------------------------*
+"* Include: ZSIMULATE_BAPI_CLASSES
+"* Purpose: Class Definitions
+"*----------------------------------------------------------------------*
+
+CLASS lcl_error_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS: handle_error IMPORTING iv_msg TYPE string.
+ENDCLASS.
+
+CLASS lcl_error_handler IMPLEMENTATION.
+  METHOD handle_error.
+    MESSAGE iv_msg TYPE 'E'.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_data_loader DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      load_master_data IMPORTING 
+        eo_customers  TYPE TABLE OF kna1
+        eo_sales_data TYPE TABLE OF knvv
+        eo_materials  TYPE TABLE OF mara.
+ENDCLASS.
+
+CLASS lcl_data_loader IMPLEMENTATION.
+  METHOD load_master_data.
+    DATA(lo_error) = NEW lcl_error_handler( ).
+
+    " Load customer general data from KNA1
+    SELECT * FROM kna1 INTO TABLE eo_customers.
+    IF sy-subrc <> 0.
+      lo_error->handle_error( 'Error loading customer data from KNA1' ).
+    ELSE.
+      WRITE: / 'KNA1 data loaded: ', LINES( eo_customers ), ' records.'.
+    ENDIF.
+
+    " Load customer sales area data from KNVV
+    SELECT * FROM knvv INTO TABLE eo_sales_data.
+    IF sy-subrc <> 0.
+      lo_error->handle_error( 'Error loading sales area data from KNVV' ).
+    ELSE.
+      WRITE: / 'KNVV data loaded: ', LINES( eo_sales_data ), ' records.'.
+    ENDIF.
+
+    " Load material data from MARA
+    SELECT * FROM mara INTO TABLE eo_materials.
+    IF sy-subrc <> 0.
+      lo_error->handle_error( 'Error loading material data from MARA' ).
+    ELSE.
+      WRITE: / 'MARA data loaded: ', LINES( eo_materials ), ' records.'.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+
+
+REPORT ZSIMULATE_BAPI_ORDERS.
+
+INCLUDE ZSIMULATE_BAPI_CLASSES.
+
+DATA: lo_data_loader TYPE REF TO lcl_data_loader,
+      it_customers  TYPE STANDARD TABLE OF kna1,
+      it_sales_data TYPE STANDARD TABLE OF knvv,
+      it_materials  TYPE STANDARD TABLE OF mara.
+
+START-OF-SELECTION.
+  CREATE OBJECT lo_data_loader.
+  lo_data_loader->load_master_data(
+    eo_customers  = it_customers
+    eo_sales_data = it_sales_data
+    eo_materials  = it_materials
+  ).
+
+  PERFORM simulate_bapi_orders.
+  PERFORM display_results.
