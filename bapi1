@@ -23,11 +23,12 @@ ENDCLASS.
 CLASS lcl_data_loader DEFINITION.
   PUBLIC SECTION.
     METHODS:
-      load_master_data IMPORTING 
+      load_master_data CHANGING
         eo_customers  TYPE ty_kna1_tab
         eo_sales_data TYPE ty_knvv_tab
         eo_materials  TYPE ty_mara_tab.
 ENDCLASS.
+
 
 CLASS lcl_data_loader IMPLEMENTATION.
   METHOD load_master_data.
@@ -60,6 +61,7 @@ CLASS lcl_data_loader IMPLEMENTATION.
 ENDCLASS.
 
 
+
 REPORT ZSIMULATE_BAPI_ORDERS.
 
 INCLUDE ZSIMULATE_BAPI_CLASSES.
@@ -72,11 +74,13 @@ DATA: lo_data_loader TYPE REF TO lcl_data_loader,
 START-OF-SELECTION.
   CREATE OBJECT lo_data_loader.
   lo_data_loader->load_master_data(
-    eo_customers  = it_customers
-    eo_sales_data = it_sales_data
-    eo_materials  = it_materials
+    CHANGING
+      eo_customers  = it_customers
+      eo_sales_data = it_sales_data
+      eo_materials  = it_materials
   ).
 
   PERFORM simulate_bapi_orders.
   PERFORM display_results.
+
 
