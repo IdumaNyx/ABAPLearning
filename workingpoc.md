@@ -1,22 +1,28 @@
 *&---------------------------------------------------------------------*
 *& Report zsimulate_bapi_orders4
 *&---------------------------------------------------------------------*
-*&
+*& This program simulates sales order creation
+*& It selects random customers, sales data and materials
+*& And then calls BAPI_SALESORDER_SIMULATE to simulate order creation
 *&---------------------------------------------------------------------*
 REPORT ZSIMULATE_BAPI_ORDERS4.
 
-INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations
+INCLUDE ZSIMULATE_BAPI_ORDERS4_TOP.  " Global Declarations (Types, Data)
 INCLUDE ZSIMULATE_BAPI_ORDERS4_SEL.  " Selection-Screen Elements
 INCLUDE ZSIMULATE_BAPI_ORDERS4_F01.  " Subroutines (FORM Routines)
 INCLUDE ZSIMULATE_BAPI_ORDERS4_CLS.  " Class Definition & Implementation
 
+"-----------------------------------------------------------------------
+" MAIN EXECUTION BLOCK
+"-----------------------------------------------------------------------
+
 START-OF-SELECTION.
 
-DATA(go_order_simulator) = NEW zcl_order_simulator( ).
+DATA(go_order_simulator) = NEW zcl_order_simulator( ). " object of class zcl_order_simulator()
 
-go_order_simulator->load_master_data( ).
-go_order_simulator->simulate_orders( ).
-go_order_simulator->display_results( ).
+go_order_simulator->load_master_data( ). " Load master data from SAP tables
+go_order_simulator->simulate_orders( ). " Generate and simulate sales orders based on selection criteria
+go_order_simulator->display_results( ). " Display successful and Failed orders
 
 -------------------------------------------------------------------------------------------------
 
@@ -68,14 +74,16 @@ DATA:
 *& Selection-Screen Elements
 *&---------------------------------------------------------------------*
 
-PARAMETERS: p_o_num TYPE i DEFAULT 10.
+"PARAMETERS:
+  "p_o_num TYPE i DEFAULT 10 OBLIGATORY.   " Number of Orders to Simulate (Mandatory)
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
   PARAMETERS:
-    p_o_type TYPE char4 DEFAULT 'TA' OBLIGATORY, " Order Type Filter
-    p_vkorg TYPE knvv-vkorg OBLIGATORY,            " Sales Organization
-    p_vtweg TYPE knvv-vtweg,                      " Distribution Channel
-    p_spart TYPE knvv-spart.                      " Division
+    p_o_num TYPE i DEFAULT 10 OBLIGATORY,   " Number of Orders to Simulate (Mandatory)
+    p_o_type TYPE char4 DEFAULT 'TA',  " Order Type Filter (Optional)
+    p_vkorg TYPE knvv-vkorg,             " Sales Organization (Optional)
+    p_vtweg TYPE knvv-vtweg,             " Distribution Channel (Optional)
+    p_spart TYPE knvv-spart.             " Division (Optional)
 SELECTION-SCREEN END OF BLOCK b1.
 
 ------------------------------------------------------------------------------------------------------------------------
@@ -87,18 +95,20 @@ SELECTION-SCREEN END OF BLOCK b1.
 
 *&---------------------------------------------------------------------*
 *& Include ZSIMULATE_BAPI_ORDERS4_F01
-*& Subroutines (FORM Routines)
+*& Subroutines (FORM Routines) for generating random data
 *&---------------------------------------------------------------------*
 
 FORM select_random_data CHANGING eo_order TYPE ty_order.
+
+" Local variables for random selections
   DATA: lv_random_index TYPE i,
         lv_max_customers TYPE i VALUE 0,
         lv_max_sales TYPE i VALUE 0,
         lv_max_materials TYPE i VALUE 0,
         lv_seed TYPE i.
 
-  lv_seed = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
-
+  "lv_seed = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
+   lv_seed = sy-uzeit * sy-tabix * sy-index + sy-datum.
   lv_max_customers = LINES( it_customers ).
   lv_max_sales = LINES( it_sales_data ).
   lv_max_materials = LINES( it_materials ).
@@ -115,8 +125,26 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
   ENDIF.
 
   DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
+
   lv_random_index = lo_random_sales->get_next( ).
   READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
+
+  "--------------------------------------------------------------------------
+*IF p_vkorg IS NOT INITIAL OR p_vtweg IS NOT INITIAL OR p_spart IS NOT INITIAL.
+*    LOOP AT it_sales_data INTO eo_order-sales_data
+*       WHERE ( vkorg = p_vkorg )
+*         OR ( vtweg = p_vtweg )
+*         OR ( spart = p_spart ).
+*
+*    lv_random_index = lo_random_sales->get_next( ).
+*    EXIT. " Stop once we find a valid match
+*  ENDLOOP.
+*
+*  ELSE.
+*      lv_random_index = lo_random_sales->get_next( ).
+*      READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
+*  ENDIF.
+  "--------------------------------------------------------------------------
   IF sy-subrc <> 0.
     MESSAGE 'Error selecting random sales area' TYPE 'E'.
   ENDIF.
@@ -167,7 +195,7 @@ CLASS zcl_order_simulator IMPLEMENTATION.
 
   METHOD load_master_data.
     " Load customer general data from KNA1
-    SELECT * FROM kna1 INTO TABLE it_customers.
+    SELECT mandt, kunnr, name1 FROM kna1 INTO TABLE @it_customers.
     IF sy-subrc <> 0.
       WRITE: / 'Error loading customer data from KNA1'.
     ELSE.
@@ -175,7 +203,7 @@ CLASS zcl_order_simulator IMPLEMENTATION.
     ENDIF.
 
     " Load customer sales area data from KNVV
-    SELECT * FROM knvv INTO TABLE it_sales_data.
+    SELECT mandt, vkorg, vtweg, spart FROM knvv INTO TABLE @it_sales_data.
     IF sy-subrc <> 0.
       WRITE: / 'Error loading sales area data from KNVV'.
     ELSE.
@@ -183,7 +211,7 @@ CLASS zcl_order_simulator IMPLEMENTATION.
     ENDIF.
 
     " Load material data from MARA
-    SELECT * FROM mara INTO TABLE it_materials.
+    SELECT mandt, matnr, ersda, mtart FROM mara INTO TABLE @it_materials.
     IF sy-subrc <> 0.
       WRITE: / 'Error loading material data from MARA'.
     ELSE.
@@ -207,8 +235,8 @@ CLASS zcl_order_simulator IMPLEMENTATION.
       " Generate a new random order
       PERFORM select_random_data CHANGING ls_order.
 
-      " Apply Selection-Screen Filters
-      IF ls_order-sales_data-vkorg <> p_vkorg OR
+     " Apply Selection-Screen Filters (Only if values are provided)
+      IF ( p_vkorg IS NOT INITIAL AND ls_order-sales_data-vkorg <> p_vkorg ) OR
          ( p_vtweg IS NOT INITIAL AND ls_order-sales_data-vtweg <> p_vtweg ) OR
          ( p_spart IS NOT INITIAL AND ls_order-sales_data-spart <> p_spart ).
         CONTINUE. " Skip order if it does not match filter criteria
@@ -216,7 +244,7 @@ CLASS zcl_order_simulator IMPLEMENTATION.
 
       " Populate order header fields
       CLEAR ls_order_header.
-      ls_order_header-doc_type = p_o_type.  " Use selected Order Type
+      ls_order_header-doc_type = p_o_type.  " Use selected Order Type (Optional)
       ls_order_header-sales_org = ls_order-sales_data-vkorg.
       ls_order_header-distr_chan = ls_order-sales_data-vtweg.
       ls_order_header-division = ls_order-sales_data-spart.
@@ -279,14 +307,17 @@ CLASS zcl_order_simulator IMPLEMENTATION.
   METHOD display_results.
     WRITE: / '--- Successful Orders ---'.
     LOOP AT it_success_orders INTO DATA(ls_succ_order).
-      WRITE: / ls_succ_order-order_id, ls_succ_order-customer-kunnr, ls_succ_order-quantity.
+      WRITE: / 'ORDER ID : ', ls_succ_order-order_id, 'NAME : ', ls_succ_order-customer-kunnr, 'QUANTITY : ', ls_succ_order-quantity.
     ENDLOOP.
 
     WRITE: / '--- Failed Orders ---'.
     LOOP AT it_failed_orders INTO DATA(ls_fail_order).
-      WRITE: / ls_fail_order-order_id,
-              ls_fail_order-customer-kunnr,
-              ls_fail_order-quantity.
+      WRITE: / 'NAME : ', ls_fail_order-customer-kunnr,
+               'VKORG : ', ls_fail_order-sales_data-vkorg,
+               'VTWEG : ', ls_fail_order-sales_data-vtweg,
+               'VKORG : ', ls_fail_order-sales_data-vkorg,
+               'ITEM : ', ls_fail_order-material-matnr,
+               'QUANTITY : ', ls_fail_order-quantity.
     ENDLOOP.
 
   ENDMETHOD.
