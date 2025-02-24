@@ -167,3 +167,132 @@ START-OF-SELECTION.
   ENDIF.
 
 -----------------------------------------------------------------------------
+
+REPORT zsimulate_sales_order. " Program Name - Simulates Sales Order
+
+"=============================
+" Step 1: Define Structures for BAPI
+"=============================
+
+" Structure for order header data
+DATA: ls_order_header TYPE bapisdh1.
+
+" Internal table for order items
+DATA: lt_order_items TYPE TABLE OF bapisditm,
+      ls_order_item  TYPE bapisditm.
+
+" Internal table for schedule lines (quantities)
+DATA: lt_schedule_lines TYPE TABLE OF bapischdl,
+      ls_schedule_line  TYPE bapischdl.
+
+" Internal table for partner function
+DATA: lt_partner TYPE TABLE OF bapiparnr,
+      ls_partner TYPE bapiparnr.
+
+" BAPI Return Message Table
+DATA: lt_return TYPE TABLE OF bapiret2,
+      ls_return TYPE bapiret2.
+
+"=============================
+" Step 2: Define Input Parameters
+"=============================
+
+" Order Input Parameters
+PARAMETERS: p_kunnr TYPE kna1-kunnr OBLIGATORY,  " Customer Number (Sold-To)
+            p_matnr TYPE mara-matnr OBLIGATORY,  " Material Number
+            p_vkorg TYPE knvv-vkorg OBLIGATORY,  " Sales Organization
+            p_vtweg TYPE knvv-vtweg OBLIGATORY,  " Distribution Channel
+            p_spart TYPE knvv-spart OBLIGATORY,  " Division
+            p_qty   TYPE vbap-kwmeng OBLIGATORY. " Order Quantity
+
+"=============================
+" Step 3: Validate Customer & Product Data
+"=============================
+
+START-OF-SELECTION.
+
+  " Fetch customer sales area data to validate eligibility
+  SELECT SINGLE kunnr FROM knvv 
+    WHERE kunnr = @p_kunnr
+      AND vkorg = @p_vkorg
+      AND vtweg = @p_vtweg
+      AND spart = @p_spart.
+
+  IF sy-subrc <> 0.
+    WRITE: / 'Error: Customer is not valid for the given sales area.'.
+    EXIT.
+  ENDIF.
+
+  " Fetch product availability from MARA and MVKE
+  SELECT SINGLE matnr FROM mvke 
+    WHERE matnr = @p_matnr
+      AND vkorg = @p_vkorg
+      AND vtweg = @p_vtweg.
+
+  IF sy-subrc <> 0.
+    WRITE: / 'Error: Material is not available for the selected sales area.'.
+    EXIT.
+  ENDIF.
+
+  "=============================
+  " Step 4: Prepare BAPI Input Data
+  "=============================
+
+  " Order Header Data
+  ls_order_header-doc_type = 'OR'. " Standard Order
+  ls_order_header-sales_org = p_vkorg.
+  ls_order_header-distr_chan = p_vtweg.
+  ls_order_header-division = p_spart.
+
+  " Order Item Data
+  ls_order_item-itm_number = '10'. " Item number
+  ls_order_item-material   = p_matnr.
+  ls_order_item-target_qty = p_qty.
+
+  " Add item to order items table
+  APPEND ls_order_item TO lt_order_items.
+
+  " Schedule Line Data (For Delivery Date & Quantity)
+  ls_schedule_line-itm_number = '10'.
+  ls_schedule_line-req_qty = p_qty.
+  APPEND ls_schedule_line TO lt_schedule_lines.
+
+  " Partner Function Data (Sold-To and Ship-To)
+  ls_partner-partn_role = 'AG'. " Sold-To Party
+  ls_partner-partn_numb = p_kunnr.
+  APPEND ls_partner TO lt_partner.
+
+  ls_partner-partn_role = 'WE'. " Ship-To Party
+  ls_partner-partn_numb = p_kunnr.
+  APPEND ls_partner TO lt_partner.
+
+  "=============================
+  " Step 5: Call BAPI to Simulate Order
+  "=============================
+
+  CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+    EXPORTING
+      order_header_in  = ls_order_header
+    TABLES
+      order_items_in   = lt_order_items
+      partneraddresses = lt_partner
+      schedule_lines   = lt_schedule_lines
+      return           = lt_return.
+
+  "=============================
+  " Step 6: Check BAPI Return Messages
+  "=============================
+
+  LOOP AT lt_return INTO ls_return.
+    WRITE: / ls_return-type, ls_return-message.
+  ENDLOOP.
+
+  " Check if there are errors
+  READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    WRITE: / 'Simulation Failed. Please check the errors above.'.
+  ELSE.
+    WRITE: / 'Sales Order Simulation Successful!'.
+  ENDIF.
+
+---------------------------------------------------------------------
