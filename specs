@@ -1,0 +1,152 @@
+1
+Utility Program - Automated Sales Order Creation AR2 – Kodiak S4 Sandbox
+FATHIMA SAIREEN
+February 7, 2025
+This document outlines the systematic approach of the utility program designed for automated sales order creation using cross-matrix analysis of customers and products in SAP SD (Sales and Distribution).
+Introduction
+SAP Sales and Distribution module handles process related to sales order, delivery, and invoice. It involves integrating master data table, applying business rules based on product quantity and customer-specific requirements, and ensuring seamless order processing. The process includes fetching data from standard SAP tables like KNA1, KNVV, KNVP, MARA, MVKE, ZQMT (custom table) along with program interacts with VBAK and VBAP based on sales order history. The cross-matrix analysis program highlights the need of automating order creation based on customer and product combination. The system automatically extracts information into sales order request determining sold-to party data. The Process ensures efficiency, accuracy, and customer satisfaction by automating repetitive tasks to streamline the order-to-cash process which reduce manual effort. Automation defines the business logic, and can be achieved using tools like SAP GUI Scripting, BAPIs (Business Application Programming Interfaces), or implementing the solution using ABAP programming.
+A complete sales order request must comprise the fields which automatically proposed or manually specified:
+•
+Header fields: Comprises with sold-to party, sales order type, sales area i.e. combination of sales organization, distribution channel and division.
+•
+Item fields: Consists of product, requested quantity, unit of measure [UoM].
+2
+Objectives
+•
+Automate order creation for analyzing customer and product by fetching data from SAP tables (KNA1, KNVV, KNVP, MARA, MVKE).
+•
+Use cross-matrix logic to determine optimal order combinations.
+•
+Populate order details (Sold-To, Ship-To, Materials, Quantity, Units of Measure) with order count and generate successful orders based on sales history (VBAK and VBAP).
+Benefits of Automatic Orders
+•
+Efficiency: Reduce the manual effort and speeds up order processing.
+•
+Accuracy: Minimizes the errors by adhering to predefined business rules.
+•
+Customer Satisfaction: Ensures timely and accurate order fulfillment.
+•
+Scalability: Support high-volume order processing without additional resources.
+Data Sources
+1.
+Customer Master Data:
+•
+General Data [KNA1]
+o
+Maintain customer name, address, phone number, email etc.
+•
+Customer Sales Data [KNVV]
+o
+Sales area data is combination of sales organization, distribution channel and division.
+•
+Partner Function [KNVP]
+o
+Business partner details like sold-to party, ship-to party, bill-to party or payer.
+2.
+Material Master Data:
+•
+General Material Data [MARA]
+o
+Product information based on material type and units of measures [UOM].
+•
+Sales Data for Materials [MVKE]
+o
+Sales area data like sales organization, distributive channel, division.
+3.
+Sales Order History Data:
+•
+Sales Document Header data [VBAK]
+o
+Information of customer number, sales organization, distributive channel, division and order type.
+•
+Sales Document Item data [VBAP]
+o
+Information of material number requested quantity, unit of measures, and pricing.
+3
+4.
+Product Quantity Data:
+o
+Quantity available for placing sales order based on different stock availability like safety stock, restricted stock, damage stock etc.
+Proposed Method
+•
+Data Integration
+To automate order creation, system must retrieve and integrate data from relevant master data table which build customer-product matrix and generates order with sold-to, ship-to, material, quantity and units of measures.
+•
+Customer data integration retrieve customer information from the KNA1, KNVV, and KNVP to understand customer-specific requirement and sales area details such as sales organization, distribution channel, division. Also determine the partner function like sold-to party, ship-to party, bill-to party and payer.
+•
+Material data integration which access MARA and MVKE tables to gather product-related information, including material availability, pricing condition, and sales-specific data such as minimum order quantity, tax classification.
+•
+Business Rules Application
+Once the data is integrated, business rule are applied to ensure the automatic order process aligns with organizational and customer-specific requirements.
+•
+Product Quantity Checks
+•
+Quantity Status which checks the quantity of the product in the system. And ensure the only products with a status of availability is considered for automatic order creation.
+•
+Stock availability ensures the required quantity is available in stock. If not – Tigger a backorder process.
+– Notify the relevant department for further action.
+•
+Customer Specific Requirements
+•
+Order Frequency analyze the historical order data to determine the frequency of orders for each customer which help to predict next order should be placed.
+•
+Minimum Order Quantity verify if the order meets the quantity specified for the customer or product.
+•
+Pricing Conditions validate pricing conditions based on customer-specific agreement stored in KNVV table.
+4
+Automation Logic
+1.
+Data Retrieval
+•
+System fetch customer and material data from relevant tables KNA1, KNVV, KNVP, MARA, MVKE using customer numbers and based on sales organization and distribution channel.
+2.
+Data Validation
+•
+Validate product quality and stock availability by linking material data through MARA and MVKE table.
+•
+Ensure the customer-specific requirement such as order frequency and minimum order quantity are met by using availability check rule which ensure the product eligibility to place order.
+3.
+Order Creation
+•
+Generate the order in SAP SD using the validation data which system define rule based on customer-specific sales area and product availability
+•
+Determine the order type while generating sales order like standard order, rush order based on priority.
+•
+Apply pricing condition of the product and partner function as per customer agreement.
+4.
+Notification and Follow-Up
+•
+Notify relevant stakeholders about the order.
+•
+Trigger follow-up actions such as back-order process, delivery scheduling, generating invoices.
+Cross-Matrix Logic
+•
+Cross-Matrix logic is done by mapping customer from table KNA1, KNVV, KNVP to product from table MARA, MVKE based on sales order historical sales data from table VBAK, VBAP.
+•
+System identifies combinations that meet shipping conditions if essential.
+•
+Generate a matrix of customer-product pairs for order creation.
+o
+Create big matrix with many successful random combinations of order.
+o
+Ex: If order count is 1000, system start creating random combinations of either matrix of 5K*500 sold-to with product or 10K*500 ship-to customer with product.
+Sold-To
+Ship-To
+Materials
+Quantity
+Unit of Measures 5K 10K 500 1000 PAC
+5
+Testing and Validation
+•
+Automation Test: System essentially executes the product with sample data to ensure it works as expected.
+•
+Output Validate: Necessary to confirm that unique combination of sales orders was create successfully.
+•
+Error Handle: The system needs to examine input data, handle logs errors, and make sure all required fields are filled in.
+Expected Outcomes
+•
+The system should validate the data fetched from VBAK and VBAP based on sales history.
+•
+The system should build customer-product matrix and generates order based on the matrix.
+•
+The system should display order counts and successfully create unique combination of sales orders.
