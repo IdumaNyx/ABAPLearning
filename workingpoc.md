@@ -57,8 +57,9 @@ DATA:
   it_sales_data     TYPE STANDARD TABLE OF knvv,
   it_materials      TYPE STANDARD TABLE OF mara.
 
+  
 ------------------------------------------------------------------------------------------------------------------------
-  *&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
 *&  Include  zsimulate_bapi_orders4_sel
 *&---------------------------------------------------------------------*
 
@@ -68,6 +69,14 @@ DATA:
 *&---------------------------------------------------------------------*
 
 PARAMETERS: p_o_num TYPE i DEFAULT 10.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+  PARAMETERS:
+    p_o_type TYPE char4 DEFAULT 'TA' OBLIGATORY, " Order Type Filter
+    p_vkorg TYPE knvv-vkorg OBLIGATORY,            " Sales Organization
+    p_vtweg TYPE knvv-vtweg,                      " Distribution Channel
+    p_spart TYPE knvv-spart.                      " Division
+SELECTION-SCREEN END OF BLOCK b1.
 
 ------------------------------------------------------------------------------------------------------------------------
 
@@ -128,7 +137,6 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
   eo_order-quantity = lo_random_qty->get_next( ).
 
 ENDFORM.
-
 
 ------------------------------------------------------------------------------------------------------------------------------------
 
@@ -199,9 +207,16 @@ CLASS zcl_order_simulator IMPLEMENTATION.
       " Generate a new random order
       PERFORM select_random_data CHANGING ls_order.
 
+      " Apply Selection-Screen Filters
+      IF ls_order-sales_data-vkorg <> p_vkorg OR
+         ( p_vtweg IS NOT INITIAL AND ls_order-sales_data-vtweg <> p_vtweg ) OR
+         ( p_spart IS NOT INITIAL AND ls_order-sales_data-spart <> p_spart ).
+        CONTINUE. " Skip order if it does not match filter criteria
+      ENDIF.
+
       " Populate order header fields
       CLEAR ls_order_header.
-      ls_order_header-doc_type = 'TA'.
+      ls_order_header-doc_type = p_o_type.  " Use selected Order Type
       ls_order_header-sales_org = ls_order-sales_data-vkorg.
       ls_order_header-distr_chan = ls_order-sales_data-vtweg.
       ls_order_header-division = ls_order-sales_data-spart.
