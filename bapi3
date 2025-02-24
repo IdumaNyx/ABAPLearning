@@ -296,3 +296,21 @@ START-OF-SELECTION.
   ENDIF.
 
 ---------------------------------------------------------------------
+DATA: lv_matnr TYPE mvke-matnr.  " Declare variable to store material number
+
+SELECT SINGLE matnr 
+  INTO lv_matnr   " Store the result into variable
+  FROM mvke 
+  WHERE matnr = @p_matnr
+    AND vkorg = @p_vkorg
+    AND vtweg = @p_vtweg.
+
+DATA: lv_kunnr TYPE knvv-kunnr.  " Declare variable to store customer number
+
+SELECT SINGLE kunnr 
+  INTO lv_kunnr   " Store the result into variable
+  FROM knvv 
+  WHERE kunnr = @p_kunnr
+    AND vkorg = @p_vkorg
+    AND vtweg = @p_vtweg
+    AND spart = @p_spart.
