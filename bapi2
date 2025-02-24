@@ -4,14 +4,14 @@
 *&---------------------------------------------------------------------*
 
 PARAMETERS: 
-  p_o_num TYPE i DEFAULT 10.   " Number of Orders to Simulate
+  p_o_num TYPE i DEFAULT 10 OBLIGATORY.   " Number of Orders to Simulate (Mandatory)
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
   PARAMETERS: 
-    p_ord_type TYPE char4 DEFAULT 'TA' OBLIGATORY, " Order Type Filter
-    p_vkorg TYPE knvv-vkorg OBLIGATORY,            " Sales Organization
-    p_vtweg TYPE knvv-vtweg,                      " Distribution Channel
-    p_spart TYPE knvv-spart.                      " Division
+    p_ord_type TYPE char4 DEFAULT 'TA',  " Order Type Filter (Optional)
+    p_vkorg TYPE knvv-vkorg,             " Sales Organization (Optional)
+    p_vtweg TYPE knvv-vtweg,             " Distribution Channel (Optional)
+    p_spart TYPE knvv-spart.             " Division (Optional)
 SELECTION-SCREEN END OF BLOCK b1.
 
 
@@ -33,8 +33,8 @@ METHOD simulate_orders.
       " Generate a new random order
       PERFORM select_random_data CHANGING ls_order.
 
-      " Apply Selection-Screen Filters
-      IF ls_order-sales_data-vkorg <> p_vkorg OR 
+      " Apply Selection-Screen Filters (Only if values are provided)
+      IF ( p_vkorg IS NOT INITIAL AND ls_order-sales_data-vkorg <> p_vkorg ) OR 
          ( p_vtweg IS NOT INITIAL AND ls_order-sales_data-vtweg <> p_vtweg ) OR
          ( p_spart IS NOT INITIAL AND ls_order-sales_data-spart <> p_spart ).
         CONTINUE. " Skip order if it does not match filter criteria
@@ -42,7 +42,7 @@ METHOD simulate_orders.
 
       " Populate order header fields
       CLEAR ls_order_header.
-      ls_order_header-doc_type = p_ord_type.  " Use selected Order Type
+      ls_order_header-doc_type = p_ord_type.  " Use selected Order Type (Optional)
       ls_order_header-sales_org = ls_order-sales_data-vkorg.
       ls_order_header-distr_chan = ls_order-sales_data-vtweg.
       ls_order_header-division = ls_order-sales_data-spart.
@@ -109,10 +109,10 @@ FORM select_random_data CHANGING eo_order TYPE ty_order.
     MESSAGE 'Error selecting random customer' TYPE 'E'.
   ENDIF.
 
-  " Select Random Sales Data Matching Selection Criteria
+  " Select Random Sales Data Matching Optional Filters
   DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
   LOOP AT go_order_simulator->it_sales_data INTO eo_order-sales_data 
-       WHERE vkorg = p_vkorg 
+       WHERE ( p_vkorg IS INITIAL OR vkorg = p_vkorg )
          AND ( p_vtweg IS INITIAL OR vtweg = p_vtweg )
          AND ( p_spart IS INITIAL OR spart = p_spart ).
 
