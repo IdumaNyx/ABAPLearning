@@ -1,0 +1,29 @@
+REPORT zfetch_cust_mat_data.
+
+" Define structures to hold selected fields
+TYPES: BEGIN OF ty_customer,
+         kunnr TYPE kna1-kunnr,
+         name1 TYPE kna1-name1,
+         land1 TYPE kna1-land1,
+         ort01 TYPE kna1-ort01,
+       END OF ty_customer.
+
+TYPES: BEGIN OF ty_material,
+         matnr TYPE mara-matnr,
+         maktx TYPE makt-maktx,
+         meins TYPE mara-meins,
+       END OF ty_material.
+
+" Internal tables to hold the data
+DATA lt_customers TYPE TABLE OF ty_customer.
+DATA lt_materials TYPE TABLE OF ty_material.
+
+" Parameters for user input
+PARAMETERS: p_kunnr TYPE kna1-kunnr OBLIGATORY,  " Customer Number
+            p_matnr TYPE mara-matnr OBLIGATORY.  " Material Number
+
+START-OF-SELECTION.
+
+  " Fetch Customer Data
+  SELECT kunnr, name1
+-------------------------------------------------------------
