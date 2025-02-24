@@ -1,29 +1,84 @@
-REPORT zfetch_cust_mat_data.
+REPORT zfetch_cust_mat_data. " Program name - Fetches customer and material data
 
-" Define structures to hold selected fields
+"=============================
+" Step 1: Define Data Structures
+"=============================
+
+" Structure to hold required customer fields
 TYPES: BEGIN OF ty_customer,
-         kunnr TYPE kna1-kunnr,
-         name1 TYPE kna1-name1,
-         land1 TYPE kna1-land1,
-         ort01 TYPE kna1-ort01,
+         kunnr TYPE kna1-kunnr,  " Customer Number
+         name1 TYPE kna1-name1,  " Customer Name
+         land1 TYPE kna1-land1,  " Country
+         ort01 TYPE kna1-ort01,  " City
        END OF ty_customer.
 
+" Structure to hold required material fields
 TYPES: BEGIN OF ty_material,
-         matnr TYPE mara-matnr,
-         maktx TYPE makt-maktx,
-         meins TYPE mara-meins,
+         matnr TYPE mara-matnr,  " Material Number
+         maktx TYPE makt-maktx,  " Material Description (from MAKT table)
+         meins TYPE mara-meins,  " Base Unit of Measure
        END OF ty_material.
 
-" Internal tables to hold the data
-DATA lt_customers TYPE TABLE OF ty_customer.
-DATA lt_materials TYPE TABLE OF ty_material.
+" Internal tables to store retrieved data
+DATA lt_customers TYPE TABLE OF ty_customer. " Table for customer data
+DATA lt_materials TYPE TABLE OF ty_material. " Table for material data
 
-" Parameters for user input
-PARAMETERS: p_kunnr TYPE kna1-kunnr OBLIGATORY,  " Customer Number
-            p_matnr TYPE mara-matnr OBLIGATORY.  " Material Number
+"=============================
+" Step 2: Define Input Parameters
+"=============================
 
+" User input parameters (mandatory)
+PARAMETERS: 
+  p_kunnr TYPE kna1-kunnr OBLIGATORY,  " Input field for Customer Number
+  p_matnr TYPE mara-matnr OBLIGATORY.  " Input field for Material Number
+
+"=============================
+" Step 3: Fetch Customer Data
+"=============================
 START-OF-SELECTION.
 
-  " Fetch Customer Data
-  SELECT kunnr, name1
+  " Selecting only required fields from KNA1 table (Customer General Data)
+  SELECT kunnr, name1, land1, ort01
+    FROM kna1
+    INTO TABLE lt_customers
+    WHERE kunnr = @p_kunnr.
+
+  " Check if any customer data was found
+  IF lt_customers IS NOT INITIAL.
+    WRITE: / 'Customer Details:'.
+    LOOP AT lt_customers INTO DATA(ls_customer). " Loop through customer data
+      WRITE: / |Customer: { ls_customer-kunnr }|,
+              |Name: { ls_customer-name1 }|,
+              |Country: { ls_customer-land1 }|,
+              |City: { ls_customer-ort01 }|.
+    ENDLOOP.
+  ELSE.
+    WRITE: / 'No Customer Data Found for the given Customer Number.'.
+  ENDIF.
+
+"=============================
+" Step 4: Fetch Material Data
+"=============================
+
+  " Selecting only required fields from MARA table (Material Master)
+  " Joining with MAKT table to fetch material descriptions (MAKT stores text descriptions)
+  SELECT mara~matnr, makt~maktx, mara~meins
+    FROM mara
+    INNER JOIN makt ON makt~matnr = mara~matnr " Joining with MAKT for Material Description
+    INTO TABLE lt_materials
+    WHERE mara~matnr = @p_matnr
+      AND makt~spras = @sy-langu.  " Fetching description based on system language
+
+  " Check if any material data was found
+  IF lt_materials IS NOT INITIAL.
+    WRITE: / 'Material Details:'.
+    LOOP AT lt_materials INTO DATA(ls_material). " Loop through material data
+      WRITE: / |Material: { ls_material-matnr }|,
+              |Description: { ls_material-maktx }|,
+              |Base Unit: { ls_material-meins }|.
+    ENDLOOP.
+  ELSE.
+    WRITE: / 'No Material Data Found for the given Material Number.'.
+  ENDIF.
+
 -------------------------------------------------------------
