@@ -82,3 +82,88 @@ START-OF-SELECTION.
   ENDIF.
 
 -------------------------------------------------------------
+
+
+REPORT zfetch_sales_history. " Program name - Fetch Sales Order History
+
+"=============================
+" Step 1: Define Data Structures
+"=============================
+
+" Structure to hold Sales Order Header Data (VBAK)
+TYPES: BEGIN OF ty_vbak,
+         vbeln TYPE vbak-vbeln,  " Sales Order Number
+         erdat TYPE vbak-erdat,  " Order Date
+         kunnr TYPE vbak-kunnr,  " Sold-to Customer
+         netwr TYPE vbak-netwr,  " Net Order Value
+       END OF ty_vbak.
+
+" Structure to hold Sales Order Item Data (VBAP)
+TYPES: BEGIN OF ty_vbap,
+         vbeln TYPE vbap-vbeln,  " Sales Order Number
+         posnr TYPE vbap-posnr,  " Item Number
+         matnr TYPE vbap-matnr,  " Material Number
+         kwmeng TYPE vbap-kwmeng, " Order Quantity
+         meins TYPE vbap-meins,  " Unit of Measure
+       END OF ty_vbap.
+
+" Internal tables to store retrieved sales order data
+DATA lt_vbak TYPE TABLE OF ty_vbak. " Table for Sales Order Headers
+DATA lt_vbap TYPE TABLE OF ty_vbap. " Table for Sales Order Items
+
+"=============================
+" Step 2: Define Input Parameters
+"=============================
+
+" User input parameter (mandatory)
+PARAMETERS: p_kunnr TYPE vbak-kunnr OBLIGATORY.  " Input field for Customer Number
+
+"=============================
+" Step 3: Fetch Sales Order Header Data (VBAK)
+"=============================
+START-OF-SELECTION.
+
+  " Selecting only required fields from VBAK table (Sales Order Header)
+  SELECT vbeln, erdat, kunnr, netwr
+    FROM vbak
+    INTO TABLE lt_vbak
+    WHERE kunnr = @p_kunnr.
+
+  " Check if any sales order data was found
+  IF lt_vbak IS NOT INITIAL.
+    WRITE: / 'Sales Order History:'.
+    LOOP AT lt_vbak INTO DATA(ls_vbak). " Loop through sales order headers
+      WRITE: / |Order: { ls_vbak-vbeln }|,
+              |Date: { ls_vbak-erdat }|,
+              |Customer: { ls_vbak-kunnr }|,
+              |Net Value: { ls_vbak-netwr }|.
+    ENDLOOP.
+  ELSE.
+    WRITE: / 'No Sales Orders Found for the given Customer Number.'.
+  ENDIF.
+
+"=============================
+" Step 4: Fetch Sales Order Item Data (VBAP)
+"=============================
+
+  " Selecting only required fields from VBAP table (Sales Order Items)
+  SELECT vbeln, posnr, matnr, kwmeng, meins
+    FROM vbap
+    INTO TABLE lt_vbap
+    FOR ALL ENTRIES IN lt_vbak " Fetch items for only the selected sales orders
+    WHERE vbeln = lt_vbak-vbeln.
+
+  " Check if any sales order item data was found
+  IF lt_vbap IS NOT INITIAL.
+    WRITE: / 'Sales Order Item Details:'.
+    LOOP AT lt_vbap INTO DATA(ls_vbap). " Loop through sales order items
+      WRITE: / |Order: { ls_vbap-vbeln }|,
+              |Item: { ls_vbap-posnr }|,
+              |Material: { ls_vbap-matnr }|,
+              |Quantity: { ls_vbap-kwmeng } { ls_vbap-meins }|.
+    ENDLOOP.
+  ELSE.
+    WRITE: / 'No Sales Order Items Found.'.
+  ENDIF.
+
+-----------------------------------------------------------------------------
