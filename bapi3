@@ -591,3 +591,79 @@ LOOP AT it_log ASSIGNING <log>.
           'Message:', <log>-message,
           'Date:', <log>-created_on.
 ENDLOOP.
+
+_________________________<<<<<<<<<_________
+
+REPORT zsimulate_sales_order. " Program Name - Sales Order Simulation with ALV Log Display
+
+"=============================
+" Step 1: Define Internal Table for Logging
+"=============================
+DATA: it_log TYPE TABLE OF STANDARD TABLE WITH EMPTY KEY.
+DATA: BEGIN OF it_log OCCURS 0,
+        log_id     TYPE char10,
+        kunnr      TYPE kna1-kunnr,
+        matnr      TYPE mara-matnr,
+        qty        TYPE vbap-kwmeng,
+        status     TYPE char10,
+        message    TYPE char255,
+        created_on TYPE sy-datum,
+      END OF it_log.
+
+DATA: lv_log_id TYPE char10.
+DATA: lv_status TYPE char10.
+DATA: lv_message TYPE char255.
+
+"=============================
+" Step 2: Define Selection Screen
+"=============================
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_kunnr TYPE kna1-kunnr OPTIONAL, " Filter by Customer
+            p_matnr TYPE mara-matnr OPTIONAL, " Filter by Material
+            p_status TYPE char10 OPTIONAL.    " Filter by Status
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
+PARAMETERS: p_date_from TYPE sy-datum OBLIGATORY, " Date Range - From
+            p_date_to TYPE sy-datum OBLIGATORY.   " Date Range - To
+SELECTION-SCREEN END OF BLOCK b2.
+
+"=============================
+" Step 3: Fetch and Display Logs in ALV
+"=============================
+START-OF-SELECTION.
+
+" Validate Date Range
+IF p_date_from > p_date_to.
+  WRITE: / 'Error: Invalid date range. The FROM date must be before TO date.'.
+  EXIT.
+ENDIF.
+
+" Filter logs based on selection screen inputs
+DATA: lt_display TYPE TABLE OF it_log.
+
+LOOP AT it_log INTO DATA(ls_log).
+  IF ( p_kunnr IS NOT INITIAL AND ls_log-kunnr <> p_kunnr ) OR
+     ( p_matnr IS NOT INITIAL AND ls_log-matnr <> p_matnr ) OR
+     ( p_status IS NOT INITIAL AND ls_log-status <> p_status ) OR
+     ( ls_log-created_on < p_date_from OR ls_log-created_on > p_date_to ).
+    CONTINUE.
+  ENDIF.
+  APPEND ls_log TO lt_display.
+ENDLOOP.
+
+" Check if there is any data to display
+IF lt_display IS INITIAL.
+  WRITE: / 'No logs found for the selected criteria.'.
+  EXIT.
+ENDIF.
+
+" Display logs using ALV
+DATA: lo_alv TYPE REF TO cl_salv_table.
+
+TRY.
+    cl_salv_table=>factory( IMPORTING r_salv_table = lo_alv CHANGING t_table = lt_display ).
+    lo_alv->display( ).
+  CATCH cx_salv_msg.
+    WRITE: / 'Error displaying ALV report.'.
+ENDTRY.
