@@ -529,3 +529,65 @@ INSERT INTO zorder_sim_log VALUES (
 ).
 
 COMMIT WORK.
+
+__________________________________________
+
+"=============================
+" Step 9: Define Internal Table for Logging
+"=============================
+DATA: BEGIN OF it_log OCCURS 0,
+        log_id   TYPE char10,
+        kunnr    TYPE kna1-kunnr,
+        matnr    TYPE mara-matnr,
+        qty      TYPE vbap-kwmeng,
+        status   TYPE char10,
+        message  TYPE char255,
+        created_on TYPE sy-datum,
+      END OF it_log.
+
+DATA: lv_log_id TYPE char10.
+DATA: lv_status TYPE char10.
+DATA: lv_message TYPE char255.
+
+_______________________________________
+
+" Generate unique log ID using system time
+lv_log_id = sy-uzeit.
+
+" Check if there are errors
+READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+IF sy-subrc = 0.
+  lv_status = 'FAIL'.
+  READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+  lv_message = ls_return-message.
+ELSE.
+  lv_status = 'SUCCESS'.
+  lv_message = 'Sales Order Simulation Successful'.
+ENDIF.
+
+" Append log entry to internal table
+APPEND INITIAL LINE TO it_log ASSIGNING FIELD-SYMBOL(<log>).
+<log>-log_id = lv_log_id.
+<log>-kunnr = p_kunnr.
+<log>-matnr = p_matnr.
+<log>-qty = p_qty.
+<log>-status = lv_status.
+<log>-message = lv_message.
+<log>-created_on = sy-datum.
+
+____________________________<_____________________
+
+"=============================
+" Step 10: Display Simulation Logs
+"=============================
+WRITE: / 'Sales Order Simulation Log:', /.
+
+LOOP AT it_log ASSIGNING <log>.
+  WRITE: / 'Log ID:', <log>-log_id, 
+          'Customer:', <log>-kunnr, 
+          'Material:', <log>-matnr,
+          'Qty:', <log>-qty,
+          'Status:', <log>-status, 
+          'Message:', <log>-message,
+          'Date:', <log>-created_on.
+ENDLOOP.
