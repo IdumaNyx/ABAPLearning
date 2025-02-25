@@ -490,3 +490,42 @@ START-OF-SELECTION.
   ELSE.
     WRITE: / 'Sales Order Simulation Successful!'.
   ENDIF.
+
+
+__________________________________________________
+
+
+
+"=============================
+" Step 9: Log Order Simulation Results
+"=============================
+DATA: lv_log_id TYPE char10.
+DATA: lv_status TYPE char10.
+DATA: lv_message TYPE char255.
+
+" Generate unique log ID using timestamp
+lv_log_id = sy-uzeit.
+
+" Check if there are errors
+READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+IF sy-subrc = 0.
+  lv_status = 'FAIL'.
+  READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+  lv_message = ls_return-message.
+ELSE.
+  lv_status = 'SUCCESS'.
+  lv_message = 'Sales Order Simulation Successful'.
+ENDIF.
+
+" Insert log into custom table
+INSERT INTO zorder_sim_log VALUES (
+  lv_log_id,
+  p_kunnr,
+  p_matnr,
+  p_qty,
+  lv_status,
+  lv_message,
+  sy-datum
+).
+
+COMMIT WORK.
