@@ -318,6 +318,11 @@ SELECT SINGLE kunnr
 __________________________________________________________________________________________________
 ==================================================================================================
 
+*&---------------------------------------------------------------------*
+*& Report zsimulate_bapi_orders5
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
 REPORT zsimulate_sales_order. " Program Name - Sales Order Simulation with Validation
 
 "=============================
@@ -328,25 +333,29 @@ REPORT zsimulate_sales_order. " Program Name - Sales Order Simulation with Valid
 data(ls_order_header) = VALUE bapisdhead( ).
 
 " Internal table for order items
-data(lt_order_items) = VALUE TABLE OF bapiitemin( ).
+data lt_order_items TYPE TABLE OF bapiitemin.
+"data(lt_order_items) = VALUE TYPE TABLE OF bapiitemin( ).
 data(ls_order_item)  = VALUE bapiitemin( ).
 
 " Internal table for schedule lines (quantities)
-data(lt_schedule_lines) = VALUE TABLE OF bapischdl( ).
+data lt_schedule_lines TYPE TABLE OF bapischdl.
+"data(lt_schedule_lines) = VALUE TABLE OF bapischdl.
 data(ls_schedule_line)  = VALUE bapischdl( ).
 
 " Internal table for partner function
-data(lt_partner) = VALUE TABLE OF bapiparnr( ).
+data lt_partner TYPE TABLE OF bapiparnr.
+"data(lt_partner) = VALUE TABLE OF bapiparnr( ).
 data(ls_partner) = VALUE bapiparnr( ).
 
 " BAPI Return Message Table
-data(lt_return) = VALUE TABLE OF bapiret2( ).
+data lt_return TYPE TABLE OF bapiret2.
+"data(lt_return) = VALUE TABLE OF bapiret2( ).
 data(ls_return) = VALUE bapiret2( ).
 
 "=============================
 " Step 2: Define Input Parameters
 "=============================
-parameters: 
+parameters:
   p_kunnr TYPE kna1-kunnr OBLIGATORY,  " Customer Number (Sold-To)
   p_matnr TYPE mara-matnr OBLIGATORY,  " Material Number
   p_vkorg TYPE knvv-vkorg OBLIGATORY,  " Sales Organization
@@ -361,9 +370,9 @@ START-OF-SELECTION.
 
   " Validate Customer Existence in Sales Area (KNVV)
   DATA(lv_kunnr) = VALUE knvv-kunnr( ).
-  SELECT SINGLE kunnr 
-    INTO lv_kunnr 
-    FROM knvv 
+  SELECT SINGLE kunnr
+    INTO @lv_kunnr
+    FROM knvv
     WHERE kunnr = @p_kunnr
       AND vkorg = @p_vkorg
       AND vtweg = @p_vtweg
@@ -378,14 +387,14 @@ START-OF-SELECTION.
   DATA(lv_sold_to) = VALUE knvp-kunnr( ).
   DATA(lv_ship_to) = VALUE knvp-kunnr( ).
 
-  SELECT SINGLE kunnr 
-    INTO lv_sold_to 
-    FROM knvp 
+  SELECT SINGLE kunnr
+    INTO @lv_sold_to
+    FROM knvp
     WHERE kunnr = @p_kunnr AND parvw = 'AG'.  " AG = Sold-To Party
 
-  SELECT SINGLE kunnr 
-    INTO lv_ship_to 
-    FROM knvp 
+  SELECT SINGLE kunnr
+    INTO @lv_ship_to
+    FROM knvp
     WHERE kunnr = @p_kunnr AND parvw = 'WE'.  " WE = Ship-To Party
 
   IF lv_sold_to IS INITIAL OR lv_ship_to IS INITIAL.
@@ -398,9 +407,9 @@ START-OF-SELECTION.
 "=============================
   DATA(lv_matnr) = VALUE mvke-matnr( ).
 
-  SELECT SINGLE matnr 
-    INTO lv_matnr 
-    FROM mvke 
+  SELECT SINGLE matnr
+    INTO @lv_matnr
+    FROM mvke
     WHERE matnr = @p_matnr
       AND vkorg = @p_vkorg
       AND vtweg = @p_vtweg.
@@ -415,9 +424,9 @@ START-OF-SELECTION.
 "=============================
   DATA(lv_stock_qty) = VALUE mard-labst( ).  " Available stock quantity
 
-  SELECT SINGLE labst 
-    INTO lv_stock_qty 
-    FROM mard 
+  SELECT SINGLE labst
+    INTO @lv_stock_qty
+    FROM mard
     WHERE matnr = @p_matnr.
 
   IF sy-subrc <> 0 OR lv_stock_qty < p_qty.
@@ -430,30 +439,30 @@ START-OF-SELECTION.
 "=============================
   " Order Header Data
   ls_order_header = VALUE bapisdhead(
-    doc_type = 'OR', " Standard Order
-    sales_org = p_vkorg,
-    distr_chan = p_vtweg,
+    doc_type = 'OR' " Standard Order
+    sales_org = p_vkorg
+    distr_chan = p_vtweg
     division = p_spart
   ).
 
   " Order Item Data
   ls_order_item = VALUE bapiitemin(
-    itm_number = '10', " Item number
-    material   = p_matnr,
+    itm_number = '10' " Item number
+    material   = p_matnr
     target_qty = p_qty
   ).
   APPEND ls_order_item TO lt_order_items.
 
   " Schedule Line Data (For Delivery Date & Quantity)
   ls_schedule_line = VALUE bapischdl(
-    itm_number = '10',
+    itm_number = '10'
     req_qty = p_qty
   ).
   APPEND ls_schedule_line TO lt_schedule_lines.
 
   " Partner Function Data (Sold-To and Ship-To)
-  APPEND VALUE bapiparnr( partn_role = 'AG', partn_numb = p_kunnr ) TO lt_partner.
-  APPEND VALUE bapiparnr( partn_role = 'WE', partn_numb = p_kunnr ) TO lt_partner.
+  APPEND VALUE bapiparnr( partn_role = 'AG' partn_numb = p_kunnr ) TO lt_partner.
+  APPEND VALUE bapiparnr( partn_role = 'WE' partn_numb = p_kunnr ) TO lt_partner.
 
 "=============================
 " Step 7: Call BAPI to Simulate Order
@@ -481,5 +490,3 @@ START-OF-SELECTION.
   ELSE.
     WRITE: / 'Sales Order Simulation Successful!'.
   ENDIF.
-
-
