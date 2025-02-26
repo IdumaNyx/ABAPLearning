@@ -821,3 +821,180 @@ LOOP AT lt_customers INTO ls_customer.
 ENDLOOP.
 
 WRITE: / 'Simulation for multiple orders completed.'.
+
+
+=================≈==========
+REPORT zsimulate_sales_order. " Program Name - Sales Order Simulation with ALV Log Display
+
+"=============================
+" Step 1: Define Internal Table for Logging
+"=============================
+
+TYPES: BEGIN OF ty_log,
+        log_id     TYPE char10,
+        kunnr      TYPE kna1-kunnr,
+        matnr      TYPE mara-matnr,
+        qty        TYPE vbap-kwmeng,
+        status     TYPE char10,
+        message    TYPE char255,
+        created_on TYPE sy-datum,
+      END OF ty_log.
+
+DATA: it_log TYPE TABLE OF ty_log WITH EMPTY KEY,
+      ls_log TYPE ty_log,
+      lv_log_id TYPE char10,
+      lv_status TYPE char10,
+      lv_message TYPE char255.
+
+"=============================
+" Step 2: Define Selection Screen
+"=============================
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_kunnr TYPE kna1-kunnr, " Filter by Customer
+            p_matnr TYPE mara-matnr, " Filter by Material
+            p_status TYPE char10.    " Filter by Status
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
+PARAMETERS: p_d_form TYPE sy-datum OBLIGATORY, " Date Range - From
+            p_dat_to TYPE sy-datum OBLIGATORY.   " Date Range - To
+SELECTION-SCREEN END OF BLOCK b2.
+
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
+PARAMETERS: p_export AS CHECKBOX DEFAULT ' ', " Export to CSV option
+            p_order_count TYPE i OBLIGATORY DEFAULT 5. " Number of test orders to generate
+SELECTION-SCREEN END OF BLOCK b3.
+
+"=============================
+" Step 3: Generate Random Orders
+"=============================
+DATA: lt_customers TYPE TABLE OF kna1-kunnr,
+      lt_materials TYPE TABLE OF mara-matnr,
+      ls_customer TYPE kna1-kunnr,
+      ls_material TYPE mara-matnr.
+
+SELECT kunnr FROM kna1 INTO TABLE lt_customers UP TO p_order_count ROWS.
+SELECT matnr FROM mara INTO TABLE lt_materials UP TO p_order_count ROWS.
+
+"=============================
+" Step 4: Simulate Sales Orders Using BAPI
+"=============================
+LOOP AT lt_customers INTO ls_customer.
+  LOOP AT lt_materials INTO ls_material.
+
+    " Ensure no duplicate orders
+    READ TABLE it_log WITH KEY kunnr = ls_customer matnr = ls_material TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      CONTINUE.
+    ENDIF.
+
+    " Generate unique log ID
+    lv_log_id = sy-uzeit.
+
+    " Call BAPI to Simulate Order
+    CLEAR: lv_status, lv_message.
+    
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+      EXPORTING
+        order_header_in = VALUE bapisdhead(
+          doc_type = 'OR',
+          sales_org = p_kunnr,
+          distr_chan = '01',
+          division = '01'
+        )
+      TABLES
+        order_items_in   = VALUE TABLE OF bapiitemin(
+          ( itm_number = '10'
+            material = ls_material
+            target_qty = 10 )
+        )
+        partneraddresses = VALUE TABLE OF bapiparnr(
+          ( partn_role = 'AG' partn_numb = ls_customer )
+          ( partn_role = 'WE' partn_numb = ls_customer )
+        )
+        return = it_log.
+
+    " Capture errors or success
+    READ TABLE it_log WITH KEY status = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_status = 'FAIL'.
+      lv_message = 'BAPI Execution Failed'.
+    ELSE.
+      lv_status = 'SUCCESS'.
+      lv_message = 'Sales Order Simulation Successful'.
+    ENDIF.
+
+    " Append log entry
+    APPEND VALUE ty_log(
+      log_id = lv_log_id
+      kunnr = ls_customer
+      matnr = ls_material
+      qty = 10
+      status = lv_status
+      message = lv_message
+      created_on = sy-datum
+    ) TO it_log.
+
+  ENDLOOP.
+ENDLOOP.
+
+"=============================
+" Step 5: Fetch and Display Logs in ALV
+"=============================
+START-OF-SELECTION.
+
+" Validate Date Range
+IF p_d_form > p_dat_to.
+  WRITE: / 'Error: Invalid date range. The FROM date must be before TO date.'.
+  EXIT.
+ENDIF.
+
+DATA: lt_display TYPE TABLE OF ty_log.
+
+LOOP AT it_log INTO ls_log.
+  IF ( p_kunnr IS NOT INITIAL AND ls_log-kunnr <> p_kunnr ) OR
+     ( p_matnr IS NOT INITIAL AND ls_log-matnr <> p_matnr ) OR
+     ( p_status IS NOT INITIAL AND ls_log-status <> p_status ) OR
+     ( ls_log-created_on < p_d_form OR ls_log-created_on > p_dat_to ).
+    CONTINUE.
+  ENDIF.
+  APPEND ls_log TO lt_display.
+ENDLOOP.
+
+IF lt_display IS INITIAL.
+  WRITE: / 'No logs found for the selected criteria.'.
+  EXIT.
+ENDIF.
+
+DATA: lo_alv TYPE REF TO cl_salv_table.
+
+TRY.
+    cl_salv_table=>factory( IMPORTING r_salv_table = lo_alv CHANGING t_table = lt_display ).
+    lo_alv->set_columns_optimize( ).
+    lo_alv->display( ).
+  CATCH cx_salv_msg INTO DATA(lo_error).
+    WRITE: / 'Error displaying ALV report:', lo_error->get_text( ).
+ENDTRY.
+
+"=============================
+" Step 6: Export to CSV if Selected
+"=============================
+IF p_export = 'X'.
+  DATA: lv_csv_line TYPE string,
+        lt_csv_lines TYPE TABLE OF string,
+        lv_file_path TYPE string.
+
+  LOOP AT it_log INTO ls_log.
+    CONCATENATE ls_log-log_id ls_log-kunnr ls_log-matnr ls_log-qty ls_log-status ls_log-message ls_log-created_on
+          INTO lv_csv_line SEPARATED BY ','.
+    APPEND lv_csv_line TO lt_csv_lines.
+  ENDLOOP.
+
+  CALL FUNCTION 'F4_FILENAME'
+    CHANGING file_name = lv_file_path.
+
+  CALL FUNCTION 'GUI_DOWNLOAD'
+    EXPORTING filename = lv_file_path filetype = 'ASC'
+    TABLES data_tab = lt_csv_lines.
+ENDIF.
+
