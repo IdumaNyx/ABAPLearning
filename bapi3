@@ -747,3 +747,77 @@ TRY.
 ENDTRY.
 
 --------------------------------------------------------------------------------------------------------------------------
+
+DATA: lt_customers TYPE TABLE OF kna1-kunnr,
+      lt_materials TYPE TABLE OF mara-matnr,
+      ls_customer TYPE kna1-kunnr,
+      ls_material TYPE mara-matnr.
+
+" Fetch Random Customers
+SELECT kunnr FROM kna1 INTO TABLE lt_customers UP TO p_order_count ROWS.
+
+" Fetch Random Materials
+SELECT matnr FROM mara INTO TABLE lt_materials UP TO p_order_count ROWS.
+
+_______/_________/_//
+LOOP AT lt_customers INTO ls_customer.
+  LOOP AT lt_materials INTO ls_material.
+
+    " Ensure no duplicate orders for same customer & material
+    READ TABLE it_log WITH KEY kunnr = ls_customer matnr = ls_material TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      CONTINUE. " Skip if order already exists
+    ENDIF.
+
+    " Generate unique log ID
+    lv_log_id = sy-uzeit.
+
+    " Call BAPI to Simulate Order
+    CLEAR: lv_status, lv_message.
+    
+    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+      EXPORTING
+        order_header_in = VALUE bapisdhead(
+          doc_type = 'OR',
+          sales_org = p_vkorg,
+          distr_chan = p_vtweg,
+          division = p_spart
+        )
+      TABLES
+        order_items_in = VALUE TABLE OF bapiitemin(
+          ( itm_number = '10'
+            material = ls_material
+            target_qty = p_qty )
+        )
+        partneraddresses = VALUE TABLE OF bapiparnr(
+          ( partn_role = 'AG' partn_numb = ls_customer )
+          ( partn_role = 'WE' partn_numb = ls_customer )
+        )
+        return = lt_return.
+
+    " Check for errors
+    READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_status = 'FAIL'.
+      READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+      lv_message = ls_return-message.
+    ELSE.
+      lv_status = 'SUCCESS'.
+      lv_message = 'Sales Order Simulation Successful'.
+    ENDIF.
+
+    " Append log entry
+    APPEND VALUE ty_log(
+      log_id = lv_log_id
+      kunnr = ls_customer
+      matnr = ls_material
+      qty = p_qty
+      status = lv_status
+      message = lv_message
+      created_on = sy-datum
+    ) TO it_log.
+
+  ENDLOOP.
+ENDLOOP.
+
+WRITE: / 'Simulation for multiple orders completed.'.
