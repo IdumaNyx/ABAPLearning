@@ -165,3 +165,27 @@ go_order_simulator->build_customer_product_matrix( ). " Cross-matrix logic
 go_order_simulator->validate_product_availability( ). " Validate stock
 go_order_simulator->simulate_orders( ). " Generate and simulate orders
 go_order_simulator->display_results( ). " Display results
+
+
+======================================
+
+METHOD build_customer_product_matrix.
+
+  lv_seed = sy-uzeit * sy-tabix * sy-index + sy-datum.
+
+  " Ensure the correct field names are referenced
+  it_product_matrix = VALUE #( 
+    FOR c IN it_customers 
+    FOR s IN it_sales_data 
+    FOR m IN it_materials 
+    WHERE ( c-kunnr = s-kunnr )  " Ensure valid customer-sales match
+    ( 
+      order_id   = |ORD{ sy-index }|, 
+      customer   = VALUE ty_customer( kunnr = c-kunnr name1 = c-name1 ),
+      sales_data = VALUE ty_sales( vkorg = s-vkorg vtweg = s-vtweg spart = s-spart ),
+      material   = VALUE ty_material( matnr = m-matnr ersda = m-ersda mtart = m-mtart ),
+      quantity   = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 )->get_next( )
+    )
+  ).
+
+ENDMETHOD.
