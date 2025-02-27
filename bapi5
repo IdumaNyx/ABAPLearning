@@ -1,0 +1,167 @@
+REPORT zsimulate_bapi_orders4.
+
+CLASS zcl_order_simulator DEFINITION FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS:
+      constructor,
+      load_master_data,
+      build_customer_product_matrix,
+      validate_product_availability,
+      simulate_orders,
+      display_results.
+
+  PRIVATE SECTION.
+    TYPES: 
+      BEGIN OF ty_customer,
+        kunnr TYPE kna1-kunnr,
+        name1 TYPE kna1-name1,
+      END OF ty_customer,
+
+      BEGIN OF ty_sales,
+        vkorg TYPE knvv-vkorg,
+        vtweg TYPE knvv-vtweg,
+        spart TYPE knvv-spart,
+      END OF ty_sales,
+
+      BEGIN OF ty_material,
+        matnr TYPE mara-matnr,
+        ersda TYPE mara-ersda,
+        mtart TYPE mara-mtart,
+        labst TYPE marc-labst, " Stock available
+      END OF ty_material,
+
+      BEGIN OF ty_order,
+        order_id   TYPE char10,
+        customer   TYPE ty_customer,
+        sales_data TYPE ty_sales,
+        material   TYPE ty_material,
+        quantity   TYPE i,
+      END OF ty_order.
+
+    DATA:
+      it_success_orders TYPE TABLE OF ty_order WITH EMPTY KEY,
+      it_failed_orders  TYPE TABLE OF ty_order WITH EMPTY KEY,
+      it_customers      TYPE TABLE OF kna1 WITH EMPTY KEY,
+      it_sales_data     TYPE TABLE OF knvv WITH EMPTY KEY,
+      it_materials      TYPE TABLE OF mara WITH EMPTY KEY,
+      it_product_matrix TYPE TABLE OF ty_order WITH EMPTY KEY.
+
+ENDCLASS.
+
+"-----------------------------------------------------------------------
+" IMPLEMENTATION
+"-----------------------------------------------------------------------
+
+CLASS zcl_order_simulator IMPLEMENTATION.
+
+  METHOD constructor.
+    " Constructor - Can initialize parameters if needed.
+  ENDMETHOD.
+
+  METHOD load_master_data.
+    " Load Customer Data
+    SELECT kunnr, name1 FROM kna1 INTO TABLE @it_customers.
+
+    " Load Sales Data
+    SELECT kunnr, vkorg, vtweg, spart FROM knvv INTO TABLE @it_sales_data.
+
+    " Load Material Data with Stock Availability
+    SELECT matnr, ersda, mtart FROM mara INTO TABLE @it_materials.
+  ENDMETHOD.
+
+  METHOD build_customer_product_matrix.
+    " Generate cross-matrix of customer-product combinations
+    it_product_matrix = VALUE #( 
+      FOR c IN it_customers 
+      FOR m IN it_materials 
+      FOR s IN it_sales_data 
+      WHERE ( c-kunnr = s-kunnr )  " Ensure valid customer-sales match
+      ( 
+        order_id   = |ORD{ sy-index }|, 
+        customer   = VALUE ty_customer( kunnr = c-kunnr name1 = c-name1 ),
+        sales_data = VALUE ty_sales( vkorg = s-vkorg vtweg = s-vtweg spart = s-spart ),
+        material   = VALUE ty_material( matnr = m-matnr ersda = m-ersda mtart = m-mtart ),
+        quantity   = cl_abap_random_int=>create( seed = sy-uzeit min = 1 max = 100 )->get_next( )
+      )
+    ).
+  ENDMETHOD.
+
+  METHOD validate_product_availability.
+    DELETE it_product_matrix WHERE material-matnr NOT IN (
+      SELECT matnr FROM marc WHERE labst > 0
+    ). " Ensure stock availability
+  ENDMETHOD.
+
+  METHOD simulate_orders.
+    DATA: ls_order TYPE ty_order,
+          it_return TYPE TABLE OF bapiret2,
+          ls_order_header TYPE bapisdhead,
+          it_order_items TYPE TABLE OF bapiitemin,
+          it_order_partners TYPE TABLE OF bapiparnr.
+
+    LOOP AT it_product_matrix INTO ls_order.
+
+      " Populate Order Header
+      ls_order_header = VALUE bapisdhead(
+        doc_type   = p_o_type,
+        sales_org  = ls_order-sales_data-vkorg,
+        distr_chan = ls_order-sales_data-vtweg,
+        division   = ls_order-sales_data-spart ).
+
+      " Populate Order Item
+      it_order_items = VALUE #( ( material = ls_order-material-matnr target_qty = ls_order-quantity ) ).
+
+      " Populate Order Partner
+      it_order_partners = VALUE #( ( partn_role = 'AG' partn_numb = ls_order-customer-kunnr ) ).
+
+      " Call BAPI
+      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+        EXPORTING order_header_in = ls_order_header
+        TABLES order_items_in = it_order_items
+               order_partners = it_order_partners
+               messagetable   = it_return.
+
+      " Process results
+      READ TABLE it_return TRANSPORTING NO FIELDS WITH KEY type = 'E'.
+      IF sy-subrc = 0.
+        APPEND ls_order TO it_failed_orders.
+      ELSE.
+        APPEND ls_order TO it_success_orders.
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD display_results.
+    WRITE: / '--- Successful Orders ---'.
+    LOOP AT it_success_orders INTO DATA(ls_succ_order).
+      WRITE: / |ORDER: { ls_succ_order-order_id } |,
+             |CUSTOMER: { ls_succ_order-customer-name1 } |,
+             |MATERIAL: { ls_succ_order-material-matnr } |,
+             |QUANTITY: { ls_succ_order-quantity } |.
+    ENDLOOP.
+
+    WRITE: / '--- Failed Orders ---'.
+    LOOP AT it_failed_orders INTO DATA(ls_fail_order).
+      WRITE: / |FAILED ORDER: { ls_fail_order-order_id } |,
+             |CUSTOMER: { ls_fail_order-customer-name1 } |,
+             |MATERIAL: { ls_fail_order-material-matnr } |,
+             |QUANTITY: { ls_fail_order-quantity } |.
+    ENDLOOP.
+  ENDMETHOD.
+
+ENDCLASS.
+
+"-----------------------------------------------------------------------
+" MAIN EXECUTION BLOCK
+"-----------------------------------------------------------------------
+
+START-OF-SELECTION.
+
+DATA(go_order_simulator) = NEW zcl_order_simulator( ).
+
+go_order_simulator->load_master_data( ).  " Load data
+go_order_simulator->build_customer_product_matrix( ). " Cross-matrix logic
+go_order_simulator->validate_product_availability( ). " Validate stock
+go_order_simulator->simulate_orders( ). " Generate and simulate orders
+go_order_simulator->display_results( ). " Display results
