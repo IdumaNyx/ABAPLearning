@@ -258,26 +258,45 @@ ENDMETHOD.
 METHOD validate_product_availability.
 
   DATA: ls_order TYPE ty_order,
-        lv_available_qty TYPE bapimgvm-available_qty,
-        lt_return TYPE TABLE OF bapiret2.
+        lv_unit TYPE meins,
+        lt_wmdvsx TYPE TABLE OF bapiwmdvsx,
+        lt_wmdvex TYPE TABLE OF bapiwmdvex,
+        ls_wmdvsx TYPE bapiwmdvsx,
+        lv_total_available_qty TYPE bapicm6iv-wkbst.
 
   LOOP AT it_product_matrix INTO ls_order.
 
-    CLEAR: lv_available_qty, lt_return.
+    CLEAR: lt_wmdvsx, lt_wmdvex, lv_total_available_qty.
 
+    " Get unit from MARA
+    SELECT SINGLE meins FROM mara INTO @lv_unit WHERE matnr = ls_order-material-matnr.
+    IF sy-subrc <> 0.
+      lv_unit = 'EA'. " Fallback unit if not found
+    ENDIF.
+
+    " Prepare input requirement (today's date, requested quantity, unit)
+    ls_wmdvsx-req_date = sy-datum.
+    ls_wmdvsx-req_qty = ls_order-quantity.
+    ls_wmdvsx-req_qty_unit = lv_unit.
+    APPEND ls_wmdvsx TO lt_wmdvsx.
+
+    " Call Availability Check BAPI
     CALL FUNCTION 'BAPI_MATERIAL_AVAILABILITY'
       EXPORTING
-        material          = ls_order-material-matnr
-        plant             = '1000' " Replace with actual plant if needed
-        check_rule        = 'A'
-      IMPORTING
-        available_quantity = lv_available_qty
+        material  = ls_order-material-matnr
+        plant     = '1000'                    " Fetch dynamically if required
+        check_rule = 'A'
       TABLES
-        return            = lt_return.
+        wmdvsx    = lt_wmdvsx
+        wmdvex    = lt_wmdvex.
 
-    " Check for errors in BAPI call itself
-    READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0 OR lv_available_qty < ls_order-quantity.
+    " Sum up all available quantities (sometimes ATP check gives per day split)
+    LOOP AT lt_wmdvex INTO DATA(ls_wmdvex).
+      lv_total_available_qty = lv_total_available_qty + ls_wmdvex-conf_qty.
+    ENDLOOP.
+
+    " If no data returned or insufficient stock, remove item from matrix
+    IF lv_total_available_qty < ls_order-quantity.
       DELETE it_product_matrix INDEX sy-tabix.
     ENDIF.
 
