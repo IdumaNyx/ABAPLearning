@@ -213,3 +213,43 @@ METHOD build_customer_product_matrix.
   ).
 
 ENDMETHOD.
+
+==================
+
+METHOD build_customer_product_matrix.
+
+  DATA: ls_customer TYPE kna1,
+        ls_sales    TYPE knvv,
+        ls_material TYPE mara,
+        ls_order    TYPE ty_order.
+
+  CLEAR it_product_matrix.
+
+  LOOP AT it_customers INTO ls_customer.
+    LOOP AT it_sales_data INTO ls_sales WHERE kunnr = ls_customer-kunnr.
+      LOOP AT it_materials INTO ls_material.
+
+        CLEAR ls_order.
+        ls_order-order_id = |ORD{ sy-tabix }|.
+        ls_order-customer-kunnr = ls_customer-kunnr.
+        ls_order-customer-name1 = ls_customer-name1.
+
+        ls_order-sales_data-vkorg = ls_sales-vkorg.
+        ls_order-sales_data-vtweg = ls_sales-vtweg.
+        ls_order-sales_data-spart = ls_sales-spart.
+
+        ls_order-material-matnr = ls_material-matnr.
+        ls_order-material-ersda = ls_material-ersda.
+        ls_order-material-mtart = ls_material-mtart.
+
+        ls_order-quantity = cl_abap_random_int=>create( seed = sy-uzeit * sy-tabix * sy-index + sy-datum min = 1 max = 100 )->get_next( ).
+
+        APPEND ls_order TO it_product_matrix.
+
+      ENDLOOP.
+    ENDLOOP.
+  ENDLOOP.
+
+ENDMETHOD.
+
+========================
