@@ -253,3 +253,24 @@ METHOD build_customer_product_matrix.
 ENDMETHOD.
 
 ========================
+
+
+METHOD validate_product_availability.
+
+  DATA: lt_valid_materials TYPE TABLE OF matnr.
+
+  " Fetch all available materials
+  SELECT matnr FROM marc INTO TABLE lt_valid_materials WHERE labst > 0.
+
+  " Loop and delete invalid materials from product matrix
+  LOOP AT it_product_matrix INTO DATA(ls_order).
+    IF ls_order-material-matnr NOT IN lt_valid_materials.
+      DELETE it_product_matrix INDEX sy-tabix.
+    ENDIF.
+  ENDLOOP.
+
+ENDMETHOD.
+
+
+===========================
+
