@@ -309,12 +309,13 @@ ENDMETHOD.
 
 REPORT zsimulate_bapi_orders1.
 
+
 "-----------------------------------------------------------------------
 " Selection Screen - Enhanced
 "-----------------------------------------------------------------------
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE 'Simulation Settings'.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE Simulate.
 
-PARAMETERS: 
+PARAMETERS:
   p_o_num TYPE i DEFAULT 10 OBLIGATORY,   " Number of Orders to Simulate
   p_vkorg TYPE knvv-vkorg,                 " Sales Organization (Optional)
   p_vtweg TYPE knvv-vtweg,                 " Distribution Channel (Optional)
@@ -325,9 +326,6 @@ PARAMETERS:
 
 SELECTION-SCREEN END OF BLOCK b1.
 
-"-----------------------------------------------------------------------
-" Class Definition
-"-----------------------------------------------------------------------
 CLASS zcl_order_simulator DEFINITION FINAL CREATE PUBLIC.
   PUBLIC SECTION.
     METHODS:
@@ -356,6 +354,7 @@ CLASS zcl_order_simulator DEFINITION FINAL CREATE PUBLIC.
         matnr TYPE mara-matnr,
         ersda TYPE mara-ersda,
         mtart TYPE mara-mtart,
+        "labst TYPE marc-labst, " Stock available
       END OF ty_material,
 
       BEGIN OF ty_order,
@@ -375,24 +374,37 @@ CLASS zcl_order_simulator DEFINITION FINAL CREATE PUBLIC.
       it_product_matrix TYPE TABLE OF ty_order WITH EMPTY KEY,
       lv_seed TYPE i.
 
+
 ENDCLASS.
 
 "-----------------------------------------------------------------------
-" Class Implementation
+" IMPLEMENTATION
 "-----------------------------------------------------------------------
+
 CLASS zcl_order_simulator IMPLEMENTATION.
 
   METHOD constructor.
+    " Constructor - Can initialize parameters if needed.
   ENDMETHOD.
 
-  METHOD load_master_data.
+*  METHOD load_master_data.
+*    " Load Customer Data
+*    SELECT mandt, kunnr, name1 FROM kna1 INTO TABLE @it_customers.
+*
+*    " Load Sales Data
+*    SELECT mandt, kunnr, vkorg, vtweg, spart FROM knvv INTO TABLE @it_sales_data.
+*
+*    " Load Material Data with Stock Availability
+*    SELECT mandt, matnr, ersda, mtart FROM mara INTO TABLE @it_materials.
+*  ENDMETHOD.
+METHOD load_master_data.
 
-    SELECT kunnr, name1 FROM kna1 INTO TABLE @it_customers.
+    SELECT mandt, kunnr, name1 FROM kna1 INTO TABLE @it_customers.
     IF p_kunnr IS NOT INITIAL.
       DELETE it_customers WHERE kunnr <> p_kunnr.
     ENDIF.
 
-    SELECT kunnr, vkorg, vtweg, spart FROM knvv INTO TABLE @it_sales_data.
+    SELECT mandt, kunnr, vkorg, vtweg, spart FROM knvv INTO TABLE @it_sales_data.
     IF p_vkorg IS NOT INITIAL.
       DELETE it_sales_data WHERE vkorg <> p_vkorg.
     ENDIF.
@@ -403,165 +415,207 @@ CLASS zcl_order_simulator IMPLEMENTATION.
       DELETE it_sales_data WHERE spart <> p_spart.
     ENDIF.
 
-    SELECT matnr, ersda, mtart FROM mara INTO TABLE @it_materials.
+    SELECT mandt, matnr, ersda, mtart FROM mara INTO TABLE @it_materials.
     IF p_matnr IS NOT INITIAL.
       DELETE it_materials WHERE matnr <> p_matnr.
     ENDIF.
 
   ENDMETHOD.
 
-  METHOD build_customer_product_matrix.
 
-    DATA: ls_customer TYPE kna1,
-          ls_sales    TYPE knvv,
-          ls_material TYPE mara,
-          ls_order    TYPE ty_order.
+METHOD build_customer_product_matrix.
 
-    CLEAR it_product_matrix.
+  DATA: ls_customer TYPE kna1,
+        ls_sales    TYPE knvv,
+        ls_material TYPE mara,
+        ls_order    TYPE ty_order.
 
-    LOOP AT it_customers INTO ls_customer.
-      LOOP AT it_sales_data INTO ls_sales WHERE kunnr = ls_customer-kunnr.
-        LOOP AT it_materials INTO ls_material.
+  CLEAR it_product_matrix.
 
-          CLEAR ls_order.
-          ls_order-order_id = |ORD{ sy-tabix }|.
-          ls_order-customer-kunnr = ls_customer-kunnr.
-          ls_order-customer-name1 = ls_customer-name1.
+  LOOP AT it_customers INTO ls_customer.
+    LOOP AT it_sales_data INTO ls_sales WHERE kunnr = ls_customer-kunnr.
+      LOOP AT it_materials INTO ls_material.
 
-          ls_order-sales_data-vkorg = ls_sales-vkorg.
-          ls_order-sales_data-vtweg = ls_sales-vtweg.
-          ls_order-sales_data-spart = ls_sales-spart.
+        CLEAR ls_order.
+        ls_order-order_id = |ORD{ sy-tabix }|.
+        ls_order-customer-kunnr = ls_customer-kunnr.
+        ls_order-customer-name1 = ls_customer-name1.
 
-          ls_order-material-matnr = ls_material-matnr.
-          ls_order-material-ersda = ls_material-ersda.
-          ls_order-material-mtart = ls_material-mtart.
+        ls_order-sales_data-vkorg = ls_sales-vkorg.
+        ls_order-sales_data-vtweg = ls_sales-vtweg.
+        ls_order-sales_data-spart = ls_sales-spart.
 
-          ls_order-quantity = cl_abap_random_int=>create(
-                                seed = sy-uzeit * sy-tabix * sy-index + sy-datum 
-                                min = 1 
-                                max = 100 )->get_next( ).
+        ls_order-material-matnr = ls_material-matnr.
+        ls_order-material-ersda = ls_material-ersda.
+        ls_order-material-mtart = ls_material-mtart.
 
-          APPEND ls_order TO it_product_matrix.
+        ls_order-quantity = cl_abap_random_int=>create( seed = sy-uzeit * sy-tabix * sy-index + sy-datum min = 1 max = 100 )->get_next( ).
 
-          IF LINES( it_product_matrix ) >= p_o_num.
+        APPEND ls_order TO it_product_matrix.
+
+        IF LINES( it_product_matrix ) >= p_o_num.
             EXIT.
           ENDIF.
 
-        ENDLOOP.
-        IF LINES( it_product_matrix ) >= p_o_num.
+      ENDLOOP.
+
+      IF LINES( it_product_matrix ) >= p_o_num.
           EXIT.
         ENDIF.
-      ENDLOOP.
-      IF LINES( it_product_matrix ) >= p_o_num.
-        EXIT.
-      ENDIF.
+
     ENDLOOP.
 
-  ENDMETHOD.
+    IF LINES( it_product_matrix ) >= p_o_num.
+          EXIT.
+        ENDIF.
 
-  METHOD validate_product_availability.
+  ENDLOOP.
 
-    DATA: ls_order TYPE ty_order,
-          lv_unit TYPE meins,
-          lt_wmdvsx TYPE TABLE OF bapiwmdvs,
-          lt_wmdvex TYPE TABLE OF bapiwmdve,
-          ls_wmdvsx TYPE bapiwmdvs,
-          lv_total_available_qty TYPE bapicm61v-wkbst,
-          lv_werks TYPE werks_d.
+ENDMETHOD.
 
-    LOOP AT it_product_matrix INTO ls_order.
+* METHOD validate_product_availability.
+*
+*    DELETE it_product_matrix WHERE material-matnr NOT IN (
+*      SELECT matnr FROM marc WHERE labst > 0
+*    ). " Ensure stock availability
+* ENDMETHOD.
 
-      CLEAR: lt_wmdvsx, lt_wmdvex, lv_total_available_qty.
+METHOD validate_product_availability.
 
-      SELECT SINGLE meins FROM mara INTO lv_unit WHERE matnr = ls_order-material-matnr.
-      IF sy-subrc <> 0.
-        lv_unit = 'EA'.
-      ENDIF.
+  DATA: ls_order TYPE ty_order,
+        lv_unit TYPE unit,
+        lt_wmdvsx TYPE TABLE OF bapiwmdvs,
+        lt_wmdvex TYPE TABLE OF bapiwmdve,
+        ls_wmdvsx TYPE bapiwmdvs,
+        lv_total_available_qty TYPE BAPICM61V-WKBST,
+        lv_werks TYPE werks_d.
+
+  LOOP AT it_product_matrix INTO ls_order.
+
+    CLEAR: lt_wmdvsx, lt_wmdvex, lv_total_available_qty.
+
+    " Get unit from MARA
+    SELECT SINGLE meins FROM mara INTO lv_unit WHERE matnr = ls_order-material-matnr.
+    IF sy-subrc <> 0.
+      lv_unit = 'EA'. " Fallback unit if not found
+    ENDIF.
+
 
       IF p_werks IS NOT INITIAL.
         lv_werks = p_werks.
       ELSE.
-        SELECT SINGLE werks FROM mvke INTO lv_werks
+        SELECT SINGLE dwerk FROM mvke INTO lv_werks
           WHERE matnr = ls_order-material-matnr
             AND vkorg = ls_order-sales_data-vkorg
             AND vtweg = ls_order-sales_data-vtweg.
       ENDIF.
 
-      ls_wmdvsx-req_date = sy-datum.
-      ls_wmdvsx-req_qty = ls_order-quantity.
-      APPEND ls_wmdvsx TO lt_wmdvsx.
+    " Prepare input requirement (today's date, requested quantity, unit)
+    ls_wmdvsx-req_date = sy-datum.
+    ls_wmdvsx-req_qty = ls_order-quantity.
+    "ls_wmdvsx-req_qty_unit = lv_unit.
+    APPEND ls_wmdvsx TO lt_wmdvsx.
 
-      CALL FUNCTION 'BAPI_MATERIAL_AVAILABILITY'
-        EXPORTING
-          material  = ls_order-material-matnr
-          plant     = lv_werks
-          check_rule = 'A'
-          unit = lv_unit
-        TABLES
-          wmdvsx    = lt_wmdvsx
-          wmdvex    = lt_wmdvex.
+    " Call Availability Check BAPI
+    CALL FUNCTION 'BAPI_MATERIAL_AVAILABILITY'
+      EXPORTING
+        material  = ls_order-material-matnr
+        plant     = lv_werks                    " Fetch dynamically if required
+        check_rule = 'A'
+        unit = 'EA'
+      TABLES
+        wmdvsx    = lt_wmdvsx
+        wmdvex    = lt_wmdvex.
 
-      LOOP AT lt_wmdvex INTO DATA(ls_wmdvex).
-        lv_total_available_qty = lv_total_available_qty + ls_wmdvex-conf_qty.
-      ENDLOOP.
-
-      IF lv_total_available_qty < ls_order-quantity.
-        DELETE it_product_matrix INDEX sy-tabix.
-      ENDIF.
-
+    " Sum up all available quantities (sometimes ATP check gives per day split)
+    LOOP AT lt_wmdvex INTO DATA(ls_wmdvex).
+      lv_total_available_qty = lv_total_available_qty." + ls_wmdvex-conf_qty.
     ENDLOOP.
 
-  ENDMETHOD.
+    " If no data returned or insufficient stock, remove item from matrix
+    IF lv_total_available_qty < ls_order-quantity.
+      DELETE it_product_matrix INDEX sy-tabix.
+    ENDIF.
+
+  ENDLOOP.
+
+ENDMETHOD.
+
 
   METHOD simulate_orders.
-
     DATA: ls_order TYPE ty_order,
           it_return TYPE TABLE OF bapiret2,
+          iv_return TYPE bapiret2,
           ls_order_header TYPE bapisdhead,
           it_order_items TYPE TABLE OF bapiitemin,
           it_order_partners TYPE TABLE OF bapiparnr.
 
     LOOP AT it_product_matrix INTO ls_order.
 
+      " Populate Order Header
       ls_order_header = VALUE bapisdhead(
         doc_type   = 'TA'
         sales_org  = ls_order-sales_data-vkorg
         distr_chan = ls_order-sales_data-vtweg
         division   = ls_order-sales_data-spart ).
 
+      " Populate Order Item
       it_order_items = VALUE #( ( material = ls_order-material-matnr target_qty = ls_order-quantity ) ).
 
+      " Populate Order Partner
       it_order_partners = VALUE #( ( partn_role = 'AG' partn_numb = ls_order-customer-kunnr ) ).
 
+      " Call BAPI
       CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
         EXPORTING order_header_in = ls_order_header
         TABLES order_items_in = it_order_items
                order_partners = it_order_partners
                messagetable   = it_return.
 
-      READ TABLE it_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+      " Process results
+      READ TABLE it_return TRANSPORTING NO FIELDS WITH KEY type = 'E'.
       IF sy-subrc = 0.
         APPEND ls_order TO it_failed_orders.
+*        LOOP AT it_return INTO iv_return.
+*            WRITE: / iv_return-type, iv_return-id, iv_return-number, iv_return-message.
+*        ENDLOOP.
       ELSE.
         APPEND ls_order TO it_success_orders.
       ENDIF.
 
     ENDLOOP.
-
   ENDMETHOD.
 
   METHOD display_results.
-    " Same as you already had.
+    WRITE: / '--- Successful Orders ---'.
+    LOOP AT it_success_orders INTO DATA(ls_succ_order).
+      WRITE: / |ORDER: { ls_succ_order-order_id } |,
+             |CUSTOMER: { ls_succ_order-customer-name1 } |,
+             |MATERIAL: { ls_succ_order-material-matnr } |,
+             |QUANTITY: { ls_succ_order-quantity } |.
+    ENDLOOP.
+
+    WRITE: / '--- Failed Orders ---'.
+    LOOP AT it_failed_orders INTO DATA(ls_fail_order).
+      WRITE: / |FAILED ORDER: { ls_fail_order-order_id } |,
+             |CUSTOMER: { ls_fail_order-customer-name1 } |,
+             |MATERIAL: { ls_fail_order-material-matnr } |,
+             |QUANTITY: { ls_fail_order-quantity } |.
+    ENDLOOP.
   ENDMETHOD.
 
 ENDCLASS.
+
+"-----------------------------------------------------------------------
+" MAIN EXECUTION BLOCK
+"-----------------------------------------------------------------------
 
 START-OF-SELECTION.
 
 DATA(go_order_simulator) = NEW zcl_order_simulator( ).
 
-go_order_simulator->load_master_data( ).
-go_order_simulator->build_customer_product_matrix( ).
-go_order_simulator->validate_product_availability( ).
-go_order_simulator->simulate_orders( ).
-go_order_simulator->display_results( ).
+go_order_simulator->load_master_data( ).  " Load data
+go_order_simulator->build_customer_product_matrix( ). " Cross-matrix logic
+go_order_simulator->validate_product_availability( ). " Validate stock
+go_order_simulator->simulate_orders( ). " Generate and simulate orders
+go_order_simulator->display_results( ). " Display results
