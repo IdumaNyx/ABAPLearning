@@ -1,427 +1,244 @@
 *&---------------------------------------------------------------------*
-*& Report ZSIMULATE_BAPI_ORDERS
+*&  Include  zmotc_simulate_orders_f01
 *&---------------------------------------------------------------------*
-*& Changes :
-*& 1. Use sy-subrc
-*& 2. Report events
-*& 3. In-line declarations
-*& 4. Field symbol
-*& 5. Custom types
-*& 6. Selection screens
-*& 7. messages
-*& 8. Perform
-*& 9. Function modules (random numbers)
-*& 10. Comments
-*& 11. Error handling
-*& 12. Failed order table
-*&
-*&
-*&
-*&---------------------------------------------------------------------*
-REPORT z_simulate_bapi_orders.
 
-*---------------------------------------------------------------------
-* Custom Type Definitions
-*---------------------------------------------------------------------
-TYPES: BEGIN OF ty_customer,
-  " Customer general data from KNA1
-  kunnr TYPE kna1-kunnr,
-  name1 TYPE kna1-name1,
-END OF ty_customer.
+CLASS lcl_order_creation IMPLEMENTATION.
 
-TYPES: BEGIN OF ty_sales,
-  " Customer sales area data from KNVV
-  vkorg TYPE knvv-vkorg,
-  vtweg TYPE knvv-vtweg,
-  spart TYPE knvv-spart,
-END OF ty_sales.
+  METHOD fetch_data.
 
-TYPES: BEGIN OF ty_material,
-  " Material data from MARA
-  matnr TYPE mara-matnr,
-  ersda TYPE mara-ersda,
-  mtart TYPE mara-mtart,
-END OF ty_material.
+    DATA lv_date TYPE syst_datum.
 
-TYPES: BEGIN OF ty_order,
-  order_id   TYPE char10,
-  customer   TYPE ty_customer,
-  sales_data TYPE ty_sales,
-  material   TYPE ty_material,
-  quantity   TYPE i,
-END OF ty_order.
+    DATA(lv_count) = p_ordctr * 100.
 
-*---------------------------------------------------------------------
-* Global Data Declarations
-*---------------------------------------------------------------------
-DATA: it_success_orders TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
-      it_failed_orders  TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY.
+*    DATA(lv_date) = sy-datum - 1095.
 
-*---------------------------------------------------------------------
-* Selection Screen Parameter: Number of orders to simulate
-*---------------------------------------------------------------------
-PARAMETERS: p_o_num TYPE i DEFAULT 10.
-
-
-
-*---------------------------------------------------------------------
-* Global Declarations for Master Data Tables
-*---------------------------------------------------------------------
-DATA: it_customers  TYPE STANDARD TABLE OF kna1,
-      it_sales_data TYPE STANDARD TABLE OF knvv,
-      it_materials  TYPE STANDARD TABLE OF mara.
-
-*---------------------------------------------------------------------
-* Local Class for Error Handling
-*---------------------------------------------------------------------
-CLASS lcl_error_handler DEFINITION.
-  PUBLIC SECTION.
-    METHODS: handle_error IMPORTING iv_msg TYPE string.
-ENDCLASS.
-
-CLASS lcl_error_handler IMPLEMENTATION.
-  METHOD handle_error.
-    MESSAGE iv_msg TYPE 'E'.  " Display error messages properly
-  ENDMETHOD.
-ENDCLASS.
-
-*---------------------------------------------------------------------
-* Form Routine to Load Master Data with Enhanced Error Handling
-*---------------------------------------------------------------------
-FORM load_master_data.
-  " Create an instance of the error handler class
-  DATA(lo_error) = NEW lcl_error_handler( ).
-
-  " Load customer general data from KNA1
-  SELECT * FROM kna1 INTO TABLE it_customers.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading customer data from KNA1' ).
-  ELSE.
-    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
-  ENDIF.
-
-  " Load customer sales area data from KNVV
-  SELECT * FROM knvv INTO TABLE it_sales_data.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
-  ELSE.
-    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
-  ENDIF.
-
-  " Load material data from MARA
-  SELECT * FROM mara INTO TABLE it_materials.
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading material data from MARA' ).
-  ELSE.
-    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
-  ENDIF.
-ENDFORM.
-
-
-*---------------------------------------------------------------------
-* Form Routine to Select Random Data for an Order
-*---------------------------------------------------------------------
-FORM select_random_data CHANGING eo_order TYPE ty_order.
-  DATA: lv_random_index TYPE i,
-        lv_max_customers TYPE i VALUE 0,
-        lv_max_sales TYPE i VALUE 0,
-        lv_max_materials TYPE i VALUE 0,
-        lv_seed TYPE i.  " Define seed variable for random generation
-
-  " Convert SY-UZEIT (HHMMSS) to an integer for the seed
-  lv_seed = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
-
-  " Get table sizes
-  lv_max_customers = LINES( it_customers ).
-  lv_max_sales = LINES( it_sales_data ).
-  lv_max_materials = LINES( it_materials ).
-
-  " Error handling if tables are empty
-  IF lv_max_customers = 0 OR lv_max_sales = 0 OR lv_max_materials = 0.
-    MESSAGE 'One or more master data tables are empty!' TYPE 'E'.
-  ENDIF.
-
-  " --- Random Selection from Customer Data ---
-  DATA(lo_random_customer) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_customers ).
-  lv_random_index = lo_random_customer->get_next( ).
-  READ TABLE it_customers INDEX lv_random_index INTO eo_order-customer.
-  IF sy-subrc <> 0.
-    MESSAGE 'Error selecting random customer' TYPE 'E'.
-  ENDIF.
-
-  " --- Random Selection from Sales Area Data ---
-  DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
-  lv_random_index = lo_random_sales->get_next( ).
-  READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
-  IF sy-subrc <> 0.
-    MESSAGE 'Error selecting random sales area' TYPE 'E'.
-  ENDIF.
-
-  " --- Random Selection from Material Data ---
-  DATA(lo_random_material) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_materials ).
-  lv_random_index = lo_random_material->get_next( ).
-  DATA: ls_material TYPE mara.
-  READ TABLE it_materials INDEX lv_random_index INTO ls_material.
-  IF sy-subrc = 0.
-    eo_order-material-matnr = ls_material-matnr.
-    eo_order-material-ersda = ls_material-ersda.
-    eo_order-material-mtart = ls_material-mtart.
-  ELSE.
-    MESSAGE 'Error selecting random material' TYPE 'E'.
-  ENDIF.
-
-  " --- Generate a Random Quantity (Between 1 and 100) ---
-  DATA(lo_random_qty) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 ).
-  eo_order-quantity = lo_random_qty->get_next( ).
-
-ENDFORM.
-
-"-------------------------------------------------------------------------------------------------------------------------
-
-FORM simulate_bapi_orders.
-  DATA: lv_count TYPE i,
-        ls_order TYPE ty_order,
-        ls_return TYPE bapiret2,  " Standard BAPI return structure
-        it_return TYPE TABLE OF bapiret2,  " Declare return messages table
-        ls_order_header TYPE bapisdhead,  " Correct BAPI order header structure
-        it_order_items  TYPE TABLE OF bapiitemin,  " Sales order items
-        it_order_partners TYPE TABLE OF bapiparnr, " Sales order partners
-        ls_order_item  TYPE bapiitemin,
-        ls_order_partner TYPE bapiparnr.
-
-  DO p_o_num TIMES.
-    " Generate a new random order
-    PERFORM select_random_data CHANGING ls_order.
-
-    " Populate order header fields using the correct structure
-    CLEAR ls_order_header.
-    ls_order_header-doc_type = 'TA'.  " Standard Order
-    ls_order_header-sales_org = ls_order-sales_data-vkorg.
-    ls_order_header-distr_chan = ls_order-sales_data-vtweg.
-    ls_order_header-division = ls_order-sales_data-spart.
-
-    " Populate Order Item (Material)"
-    CLEAR: ls_order_item, it_order_items.
-   " ls_order_item-itm_number = '000010'.  " Item number (10)
-    ls_order_item-material = ls_order-material-matnr.
-   " ls_order_item-plant = '1000'.  " Adjust plant code as per your system
-    ls_order_item-target_qty = ls_order-quantity.
-
-    APPEND ls_order_item TO it_order_items.
-
-    " Populate Order Partner (Customer)"
-    CLEAR: ls_order_partner, it_order_partners.
-    ls_order_partner-partn_role = 'AG'.  " Sold-to Party
-    ls_order_partner-partn_numb = ls_order-customer-kunnr.
-
-    APPEND ls_order_partner TO it_order_partners.
-
-    " Call the BAPI with all required parameters
-    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
       EXPORTING
-        order_header_in = ls_order_header
-      TABLES
-        order_items_in  = it_order_items
-        order_partners  = it_order_partners
-        messagetable          = it_return.
+        currdate   = sy-datum
+        backmonths = 60
+      IMPORTING
+        newdate    = lv_date.
 
-    " Check if the BAPI simulation was successful
-    READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
+* Get the Existing Orders from the system for past 1 year
+    SELECT  vbak~vbeln,
+            vbak~auart,
+            vbak~vkorg,
+            vbak~vtweg,
+            vbak~spart,
+            vbak~kunnr,
+            vbap~posnr,
+            vbap~matnr,
+            vbap~werks
+*            vbpa~kunnr AS ship_to
+         FROM vbak AS vbak
+            INNER JOIN vbap AS vbap
+            ON vbak~vbeln = vbap~vbeln
+*            INNER JOIN vbpa AS vbpa
+*            ON vbak~vbeln = vbpa~vbeln
+         INTO TABLE @gt_orders
+         UP TO @lv_count ROWS
+       WHERE vbak~vkorg         IN @s_vkorg
+       AND   vbak~vtweg         IN @s_vtweg
+       AND   vbak~spart         IN @s_spart
+       AND   vbak~kunnr         IN @s_kunnr
+       AND   vbap~matnr         IN @s_matnr
+       AND   vbap~werks         IN @s_werks
+*       AND   vbpa~parvw         EQ 'SH'.
+       AND   vbak~erdat >= @lv_date AND vbak~erdat <= @sy-datum.
+
     IF sy-subrc = 0.
-      " Order failed, store in failed orders table
-      APPEND ls_order TO it_failed_orders.
 
-      " Retry with a new order
-      CLEAR ls_order.
-      PERFORM select_random_data CHANGING ls_order.
+      SORT gt_orders BY kunnr matnr.
+      DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
 
-      " Re-attempt BAPI
-      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-        EXPORTING
-          order_header_in = ls_order_header
-        TABLES
-          order_items_in  = it_order_items
-          order_partners  = it_order_partners
-          messagetable          = it_return.
+    ENDIF.
 
-      READ TABLE it_return INTO ls_return WITH KEY type = 'E'.
-      IF sy-subrc = 0.
-        " Second attempt also failed
-        APPEND ls_order TO it_failed_orders.
-      ELSE.
-        " Second attempt succeeded
-        APPEND ls_order TO it_success_orders.
+
+  ENDMETHOD.
+
+
+  METHOD process_data.
+
+    CONSTANTS:lc_x TYPE char01 VALUE 'X'.
+
+* To Create Order
+    DATA: lv_count          TYPE i VALUE 0,
+          lv_index          TYPE i VALUE 1,
+          lv_itemno         TYPE posnr VALUE 10,
+          ls_header         TYPE bapisdhead,
+          ls_ord_header     TYPE bapisdhd1,
+          ls_ord_headerx    TYPE bapisdhd1x,
+          ls_headerx        TYPE bapisdheadx,
+          ls_item           TYPE bapiitemin,
+          lt_ord_item       TYPE TABLE OF bapisditm,
+          lt_ord_itemx      TYPE TABLE OF bapisditmx,
+          lv_vbeln          TYPE vbeln,
+          lv_lines          TYPE i,
+          lt_item           TYPE TABLE OF bapiitemin,
+          lt_partners       TYPE TABLE OF bapipartnr,
+          lt_return         TYPE TABLE OF bapiret2,
+          lt_order_partners TYPE TABLE OF bapiparnr.
+
+
+    DATA(lo_rand) = cl_abap_random=>create( ).
+
+    lv_lines = lines( gt_orders ).
+
+    WHILE lv_count < p_ordctr.
+
+* Stop the program if the iteration exceed the number of orders has been selected.
+      IF sy-index = lv_lines.
+
+        EXIT.
+
       ENDIF.
 
-    ELSE.
-      " Order successful
-      APPEND ls_order TO it_success_orders.
-    ENDIF.
+* Copy header from the orders
+* Get a random customer and header data details
 
-  ENDDO.
-ENDFORM.
+      DATA(ls_order) = VALUE ty_orders( gt_orders[ lo_rand->intinrange( low = 1 high = lv_lines ) ] ).
 
+      ls_header = CORRESPONDING #( ls_order MAPPING doc_type    = auart
+                                                    sales_org   = vkorg
+                                                    distr_chan  = vtweg
+                                                    division    = spart ).
 
+* Copy 3 Item from the orders randomly
+* Some order will have 1 or 2 or 3 material based on error list
+      DO 3 TIMES.
 
+        DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
 
-START-OF-SELECTION.
-  PERFORM load_master_data.
-  PERFORM simulate_bapi_orders.
+        ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
+                                                                      plant    = werks ).
 
-  " Display results
-  PERFORM display_results.
+* IF same combination exit, go ahead and pick the next material
+        IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
 
-FORM display_results.
-  WRITE: / '--- Successful Orders ---'.
-  LOOP AT it_success_orders INTO DATA(ls_succ_order).
-    WRITE: / ls_succ_order-order_id,
-             ls_succ_order-customer-kunnr,
-             ls_succ_order-quantity.
-  ENDLOOP.
+          CONTINUE.
 
-  WRITE: / '--- Failed Orders ---'.
-  LOOP AT it_failed_orders INTO DATA(ls_fail_order).
-    WRITE: / ls_fail_order-order_id,
-             ls_fail_order-customer-kunnr,
-             ls_fail_order-quantity.
-  ENDLOOP.
-ENDFORM.
+        ENDIF.
 
+        ls_item-po_itm_no = lv_itemno.
+        ls_item-target_qty = 1.
 
+        APPEND ls_item TO lt_item.
+        CLEAR ls_item.
+        lv_itemno = lv_itemno + 10.
 
+        APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
 
+      ENDDO.
 
-=-------------------------------------------------------------------------------
+* if no item exist then proceed with next combination
+      IF lt_item[] IS INITIAL.
 
+        CONTINUE.
 
-FORM load_master_data.
-  " Create an instance of the error handler class
-  DATA(lo_error) = NEW lcl_error_handler( ).
+      ENDIF.
 
-  " Load customer general data from KNA1
-  SELECT * FROM kna1 INTO TABLE @DATA(it_customers).
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading customer data from KNA1' ).
-  ELSE.
-    WRITE: / 'KNA1 data loaded: ', LINES( it_customers ), ' records.'.
-  ENDIF.
+      lt_order_partners = VALUE #( ( partn_role = 'AG'
+                                     partn_numb = ls_order-kunnr ) ).
 
-  " Load customer sales area data from KNVV
-  SELECT * FROM knvv INTO TABLE @DATA(it_sales_data).
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading sales area data from KNVV' ).
-  ELSE.
-    WRITE: / 'KNVV data loaded: ', LINES( it_sales_data ), ' records.'.
-  ENDIF.
+      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+        EXPORTING
+          order_header_in = ls_header
+        IMPORTING
+          salesdocument   = lv_vbeln
+        TABLES
+          order_items_in  = lt_item
+          order_partners  = lt_order_partners
+          messagetable    = lt_return.
 
-  " Load material data from MARA
-  SELECT * FROM mara INTO TABLE @DATA(it_materials).
-  IF sy-subrc <> 0.
-    lo_error->handle_error( 'Error loading material data from MARA' ).
-  ELSE.
-    WRITE: / 'MARA data loaded: ', LINES( it_materials ), ' records.'.
-  ENDIF.
-ENDFORM.
+*         order_partners  = it_order_partners.
+      IF line_exists( lt_return[ type = 'E' ] ).
 
+        gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
 
-==========================================================
+        LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
 
-FORM select_random_data CHANGING eo_order TYPE ty_order.
-  " Convert SY-UZEIT (HHMMSS) to an integer for the seed
-  DATA(lv_seed) = sy-uzeit+4(2) * 100 + sy-uzeit+2(2) * 10 + sy-uzeit+0(2).
+          gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
+                                                                                   werks = plant      ).
 
-  " Get table sizes
-  DATA(lv_max_customers) = LINES( it_customers ).
-  DATA(lv_max_sales) = LINES( it_sales_data ).
-  DATA(lv_max_materials) = LINES( it_materials ).
+          APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
 
-  " Error handling if tables are empty
-  IF lv_max_customers = 0 OR lv_max_sales = 0 OR lv_max_materials = 0.
-    MESSAGE 'One or more master data tables are empty!' TYPE 'E'.
-  ENDIF.
-
-  " Random Selection from Customer Data
-  DATA(lo_random_customer) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_customers ).
-  DATA(lv_random_index) = lo_random_customer->get_next( ).
-  READ TABLE it_customers INDEX lv_random_index INTO eo_order-customer.
-  IF sy-subrc <> 0.
-    MESSAGE 'Error selecting random customer' TYPE 'E'.
-  ENDIF.
-
-  " Random Selection from Sales Area Data
-  DATA(lo_random_sales) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_sales ).
-  lv_random_index = lo_random_sales->get_next( ).
-  READ TABLE it_sales_data INDEX lv_random_index INTO eo_order-sales_data.
-  IF sy-subrc <> 0.
-    MESSAGE 'Error selecting random sales area' TYPE 'E'.
-  ENDIF.
-
-  " Random Selection from Material Data
-  DATA(lo_random_material) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = lv_max_materials ).
-  lv_random_index = lo_random_material->get_next( ).
-  DATA(ls_material) = VALUE mara( ).
-  READ TABLE it_materials INDEX lv_random_index INTO ls_material.
-  IF sy-subrc = 0.
-    eo_order-material-matnr = ls_material-matnr.
-    eo_order-material-ersda = ls_material-ersda.
-    eo_order-material-mtart = ls_material-mtart.
-  ELSE.
-    MESSAGE 'Error selecting random material' TYPE 'E'.
-  ENDIF.
-
-  " Generate a Random Quantity (Between 1 and 100)
-  DATA(lo_random_qty) = cl_abap_random_int=>create( seed = lv_seed min = 1 max = 100 ).
-  eo_order-quantity = lo_random_qty->get_next( ).
-ENDFORM.
-
-==================================================================
+        ENDLOOP.
 
 
-FORM simulate_bapi_orders.
-  DO p_o_num TIMES.
-    " Generate a new random order
-    DATA(ls_order) = VALUE ty_order( ).
-    PERFORM select_random_data CHANGING ls_order.
+      ELSE.
 
-    " Populate order header fields
-    DATA(ls_order_header) = VALUE bapisdhead( 
-      doc_type = 'TA' 
-      sales_org = ls_order-sales_data-vkorg 
-      distr_chan = ls_order-sales_data-vtweg 
-      division = ls_order-sales_data-spart 
-    ).
+        ls_ord_header  = CORRESPONDING #( ls_header ).
+        ls_ord_headerx = VALUE #( doc_type    = abap_true
+                                  sales_org   = abap_true
+                                  distr_chan  = abap_true
+                                  division    = abap_true ).
 
-    " Populate Order Items
-    DATA(it_order_items) = VALUE TABLE OF bapisditem( 
-      ( itm_number = '000010' 
-        material = ls_order-material-matnr 
-        plant = '1000' 
-        target_qty = ls_order-quantity ) 
-    ).
+        lt_ord_item    = CORRESPONDING #( lt_item ).
 
-    " Populate Order Partners
-    DATA(it_order_partners) = VALUE TABLE OF bapiparnr(
-      ( partn_role = 'AG' partn_numb = ls_order-customer-kunnr ) 
-      ( partn_role = 'WE' partn_numb = ls_order-customer-kunnr ) 
-      ( partn_role = 'RE' partn_numb = ls_order-customer-kunnr ) 
-    ).
+        CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+          EXPORTING
+            order_header_in  = ls_ord_header
+            order_header_inx = ls_ord_headerx
+          IMPORTING
+            salesdocument    = lv_vbeln
+          TABLES
+            return           = lt_return
+            order_items_in   = lt_ord_item
+            order_items_inx  = lt_ord_itemx
+            order_partners   = lt_order_partners.
 
-    " Call BAPI
-    DATA(it_return) = VALUE TABLE OF bapiret2( ).
-    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-      EXPORTING
-        order_header_in = ls_order_header
-      TABLES
-        order_items_in  = it_order_items
-        order_partners  = it_order_partners
-        return          = it_return.
+        IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
 
-    " Check for errors
-    READ TABLE it_return INTO DATA(ls_return) WITH KEY type = 'E'.
-    IF sy-subrc = 0.
-      APPEND ls_order TO it_failed_orders.
-    ELSE.
-      APPEND ls_order TO it_success_orders.
-    ENDIF.
-  ENDDO.
-ENDFORM.
+** Commit the BAPI Transaction
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = abap_true.
+
+          gs_sucorders = CORRESPONDING #( ls_order EXCEPT vbeln matnr ).
+          gs_sucorders-vbeln = lv_vbeln.
+
+
+          LOOP AT lt_item ASSIGNING <lfs_item>.
+
+            gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
+                                                                                     werks = plant
+                                                                                     posnr = po_itm_no ).
+
+
+            APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
+
+          ENDLOOP.
+
+          lv_count = lv_count + 1.
+
+        ENDIF.
+
+      ENDIF.
+
+      lv_index = lv_index + 1. " Next line
+
+      CLEAR: ls_order, gs_sucorders, gs_errorders, ls_ord_header, ls_ord_headerx, ls_header, ls_headerx,
+             lt_item[], lt_ord_item[], lt_ord_itemx[], lt_order_partners[], lt_return[], lv_itemno.
+
+
+*  Reset the item number back to 10
+      lv_itemno = 10.
+
+    ENDWHILE.
+
+
+  ENDMETHOD.
+
+  METHOD display_output.
+
+    DATA: alv TYPE REF TO cl_salv_table .
+
+    cl_salv_table=>factory( IMPORTING r_salv_table = alv
+                            CHANGING  t_table   = gt_sucorders ).
+    alv->display( ).
+
+  ENDMETHOD.
+
+
+
+ENDCLASS.
