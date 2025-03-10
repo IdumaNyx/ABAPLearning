@@ -62,8 +62,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
     CONSTANTS:lc_x TYPE char01 VALUE 'X'.
 
 * To Create Order
-    DATA: lv_count          TYPE i VALUE 0,
-          lv_index          TYPE i VALUE 1,
+    DATA: lv_index          TYPE i VALUE 1,
           lv_itemno         TYPE posnr VALUE 10,
           ls_header         TYPE bapisdhead,
           ls_ord_header     TYPE bapisdhd1,
@@ -84,137 +83,154 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
     lv_lines = lines( gt_orders ).
 
-    WHILE lv_count < p_ordctr.
+
+    WHILE gv_count < p_ordctr.
+
+      TRY.
 
 * Stop the program if the iteration exceed the number of orders has been selected.
-      IF sy-index = lv_lines.
+          IF sy-index = lv_lines.
 
-        EXIT.
+            EXIT.
 
-      ENDIF.
+          ENDIF.
 
 * Copy header from the orders
 * Get a random customer and header data details
 
-      DATA(ls_order) = VALUE ty_orders( gt_orders[ lo_rand->intinrange( low = 1 high = lv_lines ) ] ).
+          DATA(ls_order) = VALUE ty_orders( gt_orders[ lo_rand->intinrange( low = 1 high = lv_lines ) ] ).
 
-      ls_header = CORRESPONDING #( ls_order MAPPING doc_type    = auart
-                                                    sales_org   = vkorg
-                                                    distr_chan  = vtweg
-                                                    division    = spart ).
+          ls_header = CORRESPONDING #( ls_order MAPPING doc_type    = auart
+                                                        sales_org   = vkorg
+                                                        distr_chan  = vtweg
+                                                        division    = spart ).
 
 * Copy 3 Item from the orders randomly
 * Some order will have 1 or 2 or 3 material based on error list
-      DO 3 TIMES.
+          DO 3 TIMES.
 
-        DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
+            DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
 
-        ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
-                                                                      plant    = werks ).
+            ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
+                                                                          plant    = werks ).
 
 * IF same combination exit, go ahead and pick the next material
-        IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
+            IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
 
-          CONTINUE.
+              CONTINUE.
 
-        ENDIF.
+            ENDIF.
 
-        ls_item-po_itm_no = lv_itemno.
-        ls_item-target_qty = 1.
+            ls_item-po_itm_no = lv_itemno.
+            ls_item-target_qty = 1.
 
-        APPEND ls_item TO lt_item.
-        CLEAR ls_item.
-        lv_itemno = lv_itemno + 10.
+            APPEND ls_item TO lt_item.
+            CLEAR ls_item.
+            lv_itemno = lv_itemno + 10.
 
-        APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
+            APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
 
-      ENDDO.
+          ENDDO.
 
 * if no item exist then proceed with next combination
-      IF lt_item[] IS INITIAL.
+          IF lt_item[] IS INITIAL.
 
-        CONTINUE.
+            CONTINUE.
 
-      ENDIF.
+          ENDIF.
 
-      lt_order_partners = VALUE #( ( partn_role = 'AG'
-                                     partn_numb = ls_order-kunnr ) ).
+          lt_order_partners = VALUE #( ( partn_role = 'AG'
+                                         partn_numb = ls_order-kunnr ) ).
 
-      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-        EXPORTING
-          order_header_in = ls_header
-        IMPORTING
-          salesdocument   = lv_vbeln
-        TABLES
-          order_items_in  = lt_item
-          order_partners  = lt_order_partners
-          messagetable    = lt_return.
+          CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+            EXPORTING
+              order_header_in = ls_header
+            IMPORTING
+              salesdocument   = lv_vbeln
+            TABLES
+              order_items_in  = lt_item
+              order_partners  = lt_order_partners
+              messagetable    = lt_return.
 
 *         order_partners  = it_order_partners.
-      IF line_exists( lt_return[ type = 'E' ] ).
+          IF line_exists( lt_return[ type = 'E' ] ).
 
-        gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
+            gv_errcount = gv_errcount + 1.
 
-        LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
+            gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
 
-          gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
-                                                                                   werks = plant      ).
+            LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
 
-          APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
+              gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
+                                                                                       werks = plant      ).
 
-        ENDLOOP.
+              APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
+
+            ENDLOOP.
 
 
-      ELSE.
+          ELSE.
 
-        ls_ord_header  = CORRESPONDING #( ls_header ).
-        ls_ord_headerx = VALUE #( doc_type    = abap_true
-                                  sales_org   = abap_true
-                                  distr_chan  = abap_true
-                                  division    = abap_true ).
+            ls_ord_header  = CORRESPONDING #( ls_header ).
+            ls_ord_headerx = VALUE #( doc_type    = abap_true
+                                      sales_org   = abap_true
+                                      distr_chan  = abap_true
+                                      division    = abap_true ).
 
-        lt_ord_item    = CORRESPONDING #( lt_item ).
+            lt_ord_item    = CORRESPONDING #( lt_item ).
 
-        CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
-          EXPORTING
-            order_header_in  = ls_ord_header
-            order_header_inx = ls_ord_headerx
-          IMPORTING
-            salesdocument    = lv_vbeln
-          TABLES
-            return           = lt_return
-            order_items_in   = lt_ord_item
-            order_items_inx  = lt_ord_itemx
-            order_partners   = lt_order_partners.
+            CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+              EXPORTING
+                order_header_in  = ls_ord_header
+                order_header_inx = ls_ord_headerx
+              IMPORTING
+                salesdocument    = lv_vbeln
+              TABLES
+                return           = lt_return
+                order_items_in   = lt_ord_item
+                order_items_inx  = lt_ord_itemx
+                order_partners   = lt_order_partners.
 
-        IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
+            IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
 
 ** Commit the BAPI Transaction
-          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-            EXPORTING
-              wait = abap_true.
+              CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+                EXPORTING
+                  wait = abap_true.
 
-          gs_sucorders = CORRESPONDING #( ls_order EXCEPT vbeln matnr ).
-          gs_sucorders-vbeln = lv_vbeln.
-
-
-          LOOP AT lt_item ASSIGNING <lfs_item>.
-
-            gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
-                                                                                     werks = plant
-                                                                                     posnr = po_itm_no ).
+              gs_sucorders = CORRESPONDING #( ls_order EXCEPT vbeln matnr ).
+              gs_sucorders-vbeln = lv_vbeln.
 
 
-            APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
+              LOOP AT lt_item ASSIGNING <lfs_item>.
 
-          ENDLOOP.
+                gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
+                                                                                         werks = plant
+                                                                                         posnr = po_itm_no ).
 
-          lv_count = lv_count + 1.
 
-        ENDIF.
+                APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
 
-      ENDIF.
+              ENDLOOP.
 
+              gv_count = gv_count + 1.
+
+            ENDIF.
+
+          ENDIF.
+
+        CATCH cx_root INTO DATA(lo_cx_root).
+
+          DATA(lv_text) = lo_cx_root->get_text( ).
+
+          IF sy-batch = abap_true.
+            WRITE lv_text.
+          ENDIF.
+
+      ENDTRY.
+
+
+* Reset all data
       lv_index = lv_index + 1. " Next line
 
       CLEAR: ls_order, gs_sucorders, gs_errorders, ls_ord_header, ls_ord_headerx, ls_header, ls_headerx,
@@ -226,16 +242,86 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
     ENDWHILE.
 
-
   ENDMETHOD.
 
   METHOD display_output.
 
-    DATA: alv TYPE REF TO cl_salv_table .
+    DATA: gr_table     TYPE REF TO cl_salv_table.
+    DATA: gr_functions TYPE REF TO cl_salv_functions.
+    DATA: gr_display     TYPE REF TO cl_salv_display_settings,
+          lo_grid_layout TYPE REF TO cl_salv_form_layout_grid.
 
-    cl_salv_table=>factory( IMPORTING r_salv_table = alv
-                            CHANGING  t_table   = gt_sucorders ).
-    alv->display( ).
+
+    TRY.
+
+        cl_salv_table=>factory( IMPORTING r_salv_table = gr_table
+                                CHANGING  t_table   = gt_sucorders ).
+
+
+        gr_functions = gr_table->get_functions( ).
+        gr_functions->set_all( abap_true ).
+
+        gr_display = gr_table->get_display_settings( ).
+        gr_display->set_list_header('Sales Order Simulation').
+
+
+        CREATE OBJECT lo_grid_layout.
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 1
+            column      = 1
+            text        = 'Total number of Sales Order Created: ' ).
+
+*-- Create normal text
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 1
+            column      = 2
+            text        = gv_count
+            tooltip     = gv_count ).
+
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 2
+            column      = 1
+            text        = 'Total number of Simulation: ' ).
+
+*-- Create normal text
+        gv_errcount = gv_errcount + gv_count.
+
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 2
+            column      = 2
+            text        = gv_errcount
+            tooltip     = gv_errcount ).
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 3
+            column      = 1
+            text        = 'Date' ).
+
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 3
+            column      = 2
+            text        = sy-datum ).
+
+        gr_table->set_top_of_list( value = lo_grid_layout ). "Header
+
+
+        gr_table->display( ).
+
+      CATCH cx_root INTO DATA(lo_cx_root).
+
+        DATA(lv_text) = lo_cx_root->get_text( ).
+        WRITE lv_text.
+
+
+    ENDTRY.
 
   ENDMETHOD.
 
