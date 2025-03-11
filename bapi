@@ -157,3 +157,59 @@ CLASS lcl_order_creation IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+
+
+  METHOD process_data.
+
+    DATA: lt_parallel_data TYPE TABLE OF ty_orders,
+          lv_progress TYPE i.
+
+    CALL FUNCTION 'SPBT_INITIALIZE'.
+
+    LOOP AT gt_orders INTO DATA(ls_order).
+      APPEND ls_order TO lt_parallel_data.
+    ENDLOOP.
+
+    LOOP AT lt_parallel_data INTO DATA(ls_data).
+      CALL FUNCTION 'Z_SIMULATE_ORDER'
+        STARTING NEW TASK 'TASK'
+        DESTINATION 'NONE'
+        PERFORMING handle_simulation ON END OF TASK
+        EXPORTING
+          is_order = ls_data.
+    ENDLOOP.
+
+    CALL FUNCTION 'SPBT_TERMINATE'.
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+FORM handle_simulation USING is_order TYPE ty_orders.
+
+  DATA: lv_itemno TYPE posnr VALUE 10,
+        lt_item TYPE TABLE OF bapiitemin,
+        lt_return TYPE TABLE OF bapiret2,
+        lv_vbeln TYPE vbeln.
+
+  CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+    EXPORTING
+      order_header_in = CORRESPONDING bapisdhead( is_order )
+    IMPORTING
+      salesdocument = lv_vbeln
+    TABLES
+      order_items_in = lt_item
+      messagetable = lt_return.
+
+  IF NOT line_exists( lt_return[ type = 'E' ] ).
+    gv_count = gv_count + 1.
+  ENDIF.
+
+  DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
+  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+    EXPORTING
+      percentage = lv_progress
+      text       = |Simulation Progress: { lv_progress }%|.
+
+ENDFORM.
