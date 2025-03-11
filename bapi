@@ -107,7 +107,8 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
   METHOD process_data.
 
-    DATA: lt_parallel_data TYPE TABLE OF ty_orders.
+    DATA: lt_parallel_data TYPE TABLE OF ty_orders,
+          lv_progress TYPE i.
 
     CALL FUNCTION 'SPBT_INITIALIZE'.
 
@@ -116,13 +117,12 @@ CLASS lcl_order_creation IMPLEMENTATION.
     ENDLOOP.
 
     LOOP AT lt_parallel_data INTO DATA(ls_data).
-
       CALL FUNCTION 'Z_SIMULATE_ORDER'
         STARTING NEW TASK 'TASK'
+        DESTINATION 'NONE'
         PERFORMING handle_simulation ON END OF TASK
         EXPORTING
           is_order = ls_data.
-
     ENDLOOP.
 
     CALL FUNCTION 'SPBT_TERMINATE'.
