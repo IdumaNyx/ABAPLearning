@@ -1,4 +1,4 @@
-*&---------------------------------------------------------------------*
+6*&---------------------------------------------------------------------*
 *&  Include  zsim_ord_poc_f01
 *&---------------------------------------------------------------------*
 
@@ -196,6 +196,39 @@ FORM handle_simulation USING is_order TYPE ty_orders.
   CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
     EXPORTING
       order_header_in = CORRESPONDING bapisdhead( is_order )
+    IMPORTING
+      salesdocument = lv_vbeln
+    TABLES
+      order_items_in = lt_item
+      messagetable = lt_return.
+
+  IF NOT line_exists( lt_return[ type = 'E' ] ).
+    gv_count = gv_count + 1.
+  ENDIF.
+
+  DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
+  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+    EXPORTING
+      percentage = lv_progress
+      text       = |Simulation Progress: { lv_progress }%|.
+
+ENDFORM.
+
+
+FORM handle_simulation USING taskname.
+
+  DATA: ls_data TYPE ty_orders,
+        lv_itemno TYPE posnr VALUE 10,
+        lt_item TYPE TABLE OF bapiitemin,
+        lt_return TYPE TABLE OF bapiret2,
+        lv_vbeln TYPE vbeln.
+
+  " Retrieve the data using PARAMETER ID
+  GET PARAMETER ID 'ZORD' FIELD ls_data.
+
+  CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+    EXPORTING
+      order_header_in = CORRESPONDING bapisdhead( ls_data )
     IMPORTING
       salesdocument = lv_vbeln
     TABLES
