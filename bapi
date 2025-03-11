@@ -494,9 +494,11 @@ TYPES: BEGIN OF ty_orders,
          werks TYPE vbap-werks,
        END OF ty_orders.
 
-data: gt_orders    TYPE TABLE OF ty_orders,
+DATA: gt_orders    TYPE TABLE OF ty_orders,
       gt_sucorders TYPE TABLE OF ty_orders,
-      gt_errorders TYPE TABLE OF ty_orders.
+      gt_errorders TYPE TABLE OF ty_orders,
+      gv_count     TYPE i,
+      gv_errcount  TYPE i.
 
 *---------------------------------------------------------------------*
 *&  Include  zsim_ord_poc_sel
@@ -603,6 +605,40 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
     gt_sucorders = lt_all_sucorders.
     gt_errorders = lt_all_errorders.
+  ENDMETHOD.
+
+  METHOD simulate_orders.
+    DATA: lt_return    TYPE TABLE OF bapiret2,
+          lv_vbeln     TYPE vbeln,
+          lt_sucorders TYPE TABLE OF ty_orders,
+          lt_errorders TYPE TABLE OF ty_orders.
+
+    LOOP AT gt_orders INTO DATA(ls_order).
+      CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+        EXPORTING
+          order_header_in = VALUE bapisdhead( doc_type = 'OR' )
+        TABLES
+          order_items_in  = VALUE #( ( material = ls_order-matnr plant = ls_order-werks ) )
+          return          = lt_return.
+
+      IF line_exists( lt_return[ type = 'E' ] ).
+        APPEND ls_order TO lt_errorders.
+      ELSE.
+        CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+          EXPORTING
+            order_header_in  = VALUE bapisdhd1( doc_type = 'OR' )
+          IMPORTING
+            salesdocument    = lv_vbeln
+          TABLES
+            return           = lt_return.
+
+        IF lv_vbeln IS NOT INITIAL.
+          APPEND ls_order TO lt_sucorders.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+
+    EXPORT lt_local_suc = lt_sucorders lt_local_err = lt_errorders TO MEMORY ID 'SIM_ORDER_RESULT'.
   ENDMETHOD.
 
   METHOD display_output.
