@@ -1,248 +1,106 @@
-6*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
 *&  Include  zsim_ord_poc_f01
 *&---------------------------------------------------------------------*
 
 CLASS lcl_order_creation IMPLEMENTATION.
 
-  METHOD fetch_data.
+METHOD fetch_data.
+  DATA: lv_date TYPE syst_datum.
+  DATA(lv_count) = p_ordctr * 100.
 
-    DATA: lv_date TYPE syst_datum.
-    DATA(lv_count) = p_ordctr * 100.
+  CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+    EXPORTING
+      currdate   = sy-datum
+      backmonths = 60
+    IMPORTING
+      newdate    = lv_date.
 
-    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
-      EXPORTING
-        currdate   = sy-datum
-        backmonths = 60
-      IMPORTING
-        newdate    = lv_date.
-
-    SELECT vbak~vbeln,
-           vbak~auart,
-           vbak~vkorg,
-           vbak~vtweg,
-           vbak~spart,
-           vbak~kunnr,
-           vbap~posnr,
-           vbap~matnr,
-           vbap~werks
-      FROM vbak AS vbak
-      INNER JOIN vbap AS vbap ON vbak~vbeln = vbap~vbeln
-      INTO TABLE @gt_orders
-      UP TO @lv_count ROWS
-      WHERE vbak~vkorg IN @s_vkorg
+  SELECT vbak~auart, vbak~vtweg, vbak~kunnr, vbap~matnr, vbap~werks,
+         vbpa~kunnr AS ship_to
+    FROM vbak AS vbak
+    INNER JOIN vbap AS vbap ON vbak~vbeln = vbap~vbeln
+    INNER JOIN kna1 AS kna1 ON vbak~kunnr = kna1~kunnr
+    INNER JOIN vbpa AS vbpa ON vbak~vbeln = vbpa~vbeln
+    INTO TABLE @gt_orders
+    UP TO @lv_count ROWS
+    WHERE vbak~vkorg IN @s_vkorg
       AND vbak~vtweg IN @s_vtweg
       AND vbak~spart IN @s_spart
       AND vbak~kunnr IN @s_kunnr
       AND vbap~matnr IN @s_matnr
       AND vbap~werks IN @s_werks
-      AND vbak~erdat >= @lv_date AND vbak~erdat <= @sy-datum.
+      AND vbpa~parvw = 'SH'
+      AND vbak~erdat >= @lv_date
+      AND vbak~erdat <= @sy-datum.
 
-    IF sy-subrc = 0.
-      SORT gt_orders BY kunnr matnr.
-      DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
-    ENDIF.
+  IF sy-subrc = 0.
+    SORT gt_orders BY kunnr matnr.
+    DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
+  ENDIF.
+ENDMETHOD.
 
-  ENDMETHOD.
+METHOD process_data.
+  DATA: lt_tasks TYPE TABLE OF REF TO cl_abap_task,
+        lo_task  TYPE REF TO cl_abap_task.
 
-  METHOD process_data.
+  LOOP AT gt_orders INTO DATA(ls_order).
+    CREATE OBJECT lo_task TYPE cl_abap_task EXPORTING name = 'Z_SIM_ORDER'.
+    lo_task->set_task_handler( iv_handler = 'HANDLE_SIMULATION' ).
+    lo_task->set_data( iv_data = ls_order ).
+    lo_task->start( ).
+    APPEND lo_task TO lt_tasks.
+  ENDLOOP.
 
-    CONSTANTS: lc_x TYPE char01 VALUE 'X'.
+  LOOP AT lt_tasks INTO lo_task.
+    lo_task->wait( ).
+  ENDLOOP.
+ENDMETHOD.
 
-    DATA: lv_index TYPE i VALUE 1,
-          lv_itemno TYPE posnr VALUE 10,
-          lt_parallel_data TYPE TABLE OF ty_orders,
-          lv_progress TYPE i.
-
-    CALL FUNCTION 'SPBT_INITIALIZE'.
-
-    LOOP AT gt_orders INTO DATA(ls_order).
-      APPEND ls_order TO lt_parallel_data.
-    ENDLOOP.
-
-    LOOP AT lt_parallel_data INTO DATA(ls_data).
-
-      CALL FUNCTION 'Z_SIMULATE_ORDER'
-        STARTING NEW TASK 'TASK'
-        PERFORMING handle_simulation ON END OF TASK
-        EXPORTING
-          is_order = ls_data.
-
-    ENDLOOP.
-
-    CALL FUNCTION 'SPBT_TERMINATE'.
-
-  ENDMETHOD.
-
-  FORM handle_simulation USING is_order TYPE ty_orders.
-    DATA: lv_itemno TYPE posnr VALUE 10,
-          lt_item TYPE TABLE OF bapiitemin,
-          lt_return TYPE TABLE OF bapiret2,
-          lv_vbeln TYPE vbeln.
-
-    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-      EXPORTING
-        order_header_in = CORRESPONDING bapisdhead( is_order )
-      IMPORTING
-        salesdocument = lv_vbeln
-      TABLES
-        order_items_in = lt_item
-        messagetable = lt_return.
-
-    IF NOT line_exists( lt_return[ type = 'E' ] ).
-      gv_count = gv_count + 1.
-    ENDIF.
-
-    DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
-    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
-      EXPORTING
-        percentage = lv_progress
-        text       = |Simulation Progress: { lv_progress }%|.
-  ENDFORM.
-
-ENDCLASS.
-
-
-
-CLASS lcl_order_creation IMPLEMENTATION.
-
-  METHOD process_data.
-
-    DATA: lt_parallel_data TYPE TABLE OF ty_orders,
-          lv_progress TYPE i.
-
-    CALL FUNCTION 'SPBT_INITIALIZE'.
-
-    LOOP AT gt_orders INTO DATA(ls_order).
-      APPEND ls_order TO lt_parallel_data.
-    ENDLOOP.
-
-    LOOP AT lt_parallel_data INTO DATA(ls_data).
-      CALL FUNCTION 'Z_SIMULATE_ORDER'
-        STARTING NEW TASK 'TASK'
-        DESTINATION 'NONE'
-        PERFORMING handle_simulation ON END OF TASK
-        EXPORTING
-          is_order = ls_data.
-    ENDLOOP.
-
-    CALL FUNCTION 'SPBT_TERMINATE'.
-
-  ENDMETHOD.
-
-  METHOD handle_simulation.
-    DATA: lv_itemno TYPE posnr VALUE 10,
-          lt_item TYPE TABLE OF bapiitemin,
-          lt_return TYPE TABLE OF bapiret2,
-          lv_vbeln TYPE vbeln.
-
-    CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-      EXPORTING
-        order_header_in = CORRESPONDING bapisdhead( is_order )
-      IMPORTING
-        salesdocument = lv_vbeln
-      TABLES
-        order_items_in = lt_item
-        messagetable = lt_return.
-
-    IF NOT line_exists( lt_return[ type = 'E' ] ).
-      gv_count = gv_count + 1.
-    ENDIF.
-
-    DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
-    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
-      EXPORTING
-        percentage = lv_progress
-        text       = |Simulation Progress: { lv_progress }%|.
-
-  ENDMETHOD.
-
-ENDCLASS.
-
-
-
-  METHOD process_data.
-
-    DATA: lt_parallel_data TYPE TABLE OF ty_orders,
-          lv_progress TYPE i.
-
-    CALL FUNCTION 'SPBT_INITIALIZE'.
-
-    LOOP AT gt_orders INTO DATA(ls_order).
-      APPEND ls_order TO lt_parallel_data.
-    ENDLOOP.
-
-    LOOP AT lt_parallel_data INTO DATA(ls_data).
-      CALL FUNCTION 'Z_SIMULATE_ORDER'
-        STARTING NEW TASK 'TASK'
-        DESTINATION 'NONE'
-        PERFORMING handle_simulation ON END OF TASK
-        EXPORTING
-          is_order = ls_data.
-    ENDLOOP.
-
-    CALL FUNCTION 'SPBT_TERMINATE'.
-
-  ENDMETHOD.
-
-ENDCLASS.
-
-FORM handle_simulation USING is_order TYPE ty_orders.
-
-  DATA: lv_itemno TYPE posnr VALUE 10,
-        lt_item TYPE TABLE OF bapiitemin,
+METHOD handle_simulation.
+  DATA: ls_order TYPE ty_orders,
+        lv_vbeln TYPE vbeln,
         lt_return TYPE TABLE OF bapiret2,
-        lv_vbeln TYPE vbeln.
+        lt_item TYPE TABLE OF bapiitemin,
+        lt_partners TYPE TABLE OF bapipartnr.
+
+  ls_order = iv_data.
+
+  "Simulate order creation logic
+  lt_partners = VALUE #( ( partn_role = 'AG' partn_numb = ls_order-kunnr ) ).
 
   CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
     EXPORTING
-      order_header_in = CORRESPONDING bapisdhead( is_order )
+      order_header_in = ls_order
     IMPORTING
-      salesdocument = lv_vbeln
+      salesdocument   = lv_vbeln
     TABLES
-      order_items_in = lt_item
-      messagetable = lt_return.
+      order_items_in  = lt_item
+      order_partners  = lt_partners
+      messagetable    = lt_return.
 
-  IF NOT line_exists( lt_return[ type = 'E' ] ).
-    gv_count = gv_count + 1.
+  IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
   ENDIF.
+ENDMETHOD.
 
-  DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
-  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
-    EXPORTING
-      percentage = lv_progress
-      text       = |Simulation Progress: { lv_progress }%|.
+METHOD display_output.
+  DATA: gr_table TYPE REF TO cl_salv_table,
+        gr_functions TYPE REF TO cl_salv_functions,
+        gr_display TYPE REF TO cl_salv_display_settings.
 
-ENDFORM.
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING r_salv_table = gr_table
+        CHANGING  t_table      = gt_sucorders ).
+      gr_functions = gr_table->get_functions( ).
+      gr_functions->set_all( abap_true ).
+      gr_display = gr_table->get_display_settings( ).
+      gr_display->set_list_header('Sales Order Simulation').
+      gr_table->display( ).
+    CATCH cx_root INTO DATA(lo_cx_root).
+      DATA(lv_text) = lo_cx_root->get_text( ).
+      WRITE lv_text.
+  ENDTRY.
+ENDMETHOD.
 
-
-FORM handle_simulation USING taskname.
-
-  DATA: ls_data TYPE ty_orders,
-        lv_itemno TYPE posnr VALUE 10,
-        lt_item TYPE TABLE OF bapiitemin,
-        lt_return TYPE TABLE OF bapiret2,
-        lv_vbeln TYPE vbeln.
-
-  " Retrieve the data using PARAMETER ID
-  GET PARAMETER ID 'ZORD' FIELD ls_data.
-
-  CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-    EXPORTING
-      order_header_in = CORRESPONDING bapisdhead( ls_data )
-    IMPORTING
-      salesdocument = lv_vbeln
-    TABLES
-      order_items_in = lt_item
-      messagetable = lt_return.
-
-  IF NOT line_exists( lt_return[ type = 'E' ] ).
-    gv_count = gv_count + 1.
-  ENDIF.
-
-  DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
-  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
-    EXPORTING
-      percentage = lv_progress
-      text       = |Simulation Progress: { lv_progress }%|.
-
-ENDFORM.
+ENDCLASS.
