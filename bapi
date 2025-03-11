@@ -452,3 +452,177 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
 
 ENDCLASS.
+
+
+
+
+*&---------------------------------------------------------------------*
+*& Report zsim_ord_poc
+*&---------------------------------------------------------------------*
+*& Parallel Processing Implementation for Sales Order Simulation
+*&---------------------------------------------------------------------*
+REPORT zsim_ord_poc MESSAGE-ID zotc NO STANDARD PAGE HEADING.
+
+INCLUDE zsim_ord_poc_top.    " Global Data Declaration
+INCLUDE zsim_ord_poc_sel.    " Selection Screen
+INCLUDE zsim_ord_poc_f01.    " Processing Logic
+
+START-OF-SELECTION.
+
+  DATA(lo_obj) = NEW lcl_order_creation( ).
+
+* Fetch Customer Data
+  lo_obj->fetch_data( ).
+
+  IF gt_orders IS NOT INITIAL.
+
+* Process Data with Parallel Processing
+    lo_obj->process_data( ).
+
+* Display Output
+    lo_obj->display_output( ).
+
+  ENDIF.
+
+*---------------------------------------------------------------------*
+*&  Include  zsim_ord_poc_top
+*---------------------------------------------------------------------*
+TYPES: BEGIN OF ty_orders,
+         vbeln TYPE vbak-vbeln,
+         kunnr TYPE kna1-kunnr,
+         matnr TYPE mara-matnr,
+         werks TYPE vbap-werks,
+       END OF ty_orders.
+
+data: gt_orders    TYPE TABLE OF ty_orders,
+      gt_sucorders TYPE TABLE OF ty_orders,
+      gt_errorders TYPE TABLE OF ty_orders.
+
+*---------------------------------------------------------------------*
+*&  Include  zsim_ord_poc_sel
+*---------------------------------------------------------------------*
+DATA: gv_kunnr TYPE kna1-kunnr,
+      gv_auart TYPE vbak-auart,
+      gv_vkorg TYPE vbak-vkorg,
+      gv_vtweg TYPE vbak-vtweg,
+      gv_spart TYPE vbak-spart,
+      gv_matnr TYPE vbap-matnr,
+      gv_werks TYPE vbap-werks.
+
+SELECTION-SCREEN: BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
+
+SELECT-OPTIONS: s_kunnr FOR gv_kunnr,
+                s_auart FOR gv_auart NO INTERVALS NO-EXTENSION,
+                s_vkorg FOR gv_vkorg NO INTERVALS NO-EXTENSION,
+                s_vtweg FOR gv_vtweg NO INTERVALS NO-EXTENSION,
+                s_spart FOR gv_spart NO INTERVALS NO-EXTENSION,
+                s_matnr FOR gv_matnr,
+                s_werks FOR gv_werks.
+
+SELECTION-SCREEN: END OF BLOCK blk1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK blk2 WITH FRAME TITLE TEXT-002.
+
+PARAMETERS: p_ordctr TYPE i DEFAULT 3 OBLIGATORY.
+
+SELECTION-SCREEN: END OF BLOCK blk2.
+
+*---------------------------------------------------------------------*
+*&  Include  zsim_ord_poc_f01
+*---------------------------------------------------------------------*
+CLASS lcl_order_creation IMPLEMENTATION.
+
+  METHOD fetch_data.
+    DATA: lv_date TYPE syst_datum.
+
+    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+      EXPORTING currdate = sy-datum backmonths = 60
+      IMPORTING newdate = lv_date.
+
+    SELECT vbak~vbeln,
+           vbak~kunnr,
+           vbap~matnr,
+           vbap~werks
+      FROM vbak
+      INNER JOIN vbap ON vbak~vbeln = vbap~vbeln
+      INTO TABLE @gt_orders
+      WHERE vbak~vkorg IN @s_vkorg
+        AND vbak~auart IN @s_auart
+        AND vbak~vtweg IN @s_vtweg
+        AND vbak~spart IN @s_spart
+        AND vbak~kunnr IN @s_kunnr
+        AND vbap~matnr IN @s_matnr
+        AND vbap~werks IN @s_werks
+        AND vbak~erdat BETWEEN @lv_date AND @sy-datum.
+
+    IF sy-subrc = 0.
+      SORT gt_orders BY kunnr matnr.
+      DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD process_data.
+    DATA: lo_parallel TYPE REF TO cl_abap_parallel,
+          lv_taskname TYPE c LENGTH 10,
+          lt_chunks   TYPE TABLE OF ty_orders,
+          lt_chunk    TYPE ty_orders,
+          lv_counter  TYPE i VALUE 1,
+          lv_chunk_size TYPE i VALUE 10,
+          lt_all_sucorders TYPE TABLE OF ty_orders,
+          lt_all_errorders TYPE TABLE OF ty_orders.
+
+* Split data into chunks
+    DO lines( gt_orders ) / lv_chunk_size TIMES.
+      lt_chunk = VALUE #( FOR wa IN gt_orders WHERE ( sy-tabix MOD lv_chunk_size = lv_counter - 1 ) ( wa ) ).
+      APPEND lt_chunk TO lt_chunks.
+      ADD 1 TO lv_counter.
+    ENDDO.
+
+* Initialize Parallel Processing
+    lo_parallel = cl_abap_parallel=>create( ).
+
+* Create and start tasks
+    LOOP AT lt_chunks ASSIGNING FIELD-SYMBOL(<chunk>).
+      lv_taskname = |TASK_{ sy-tabix }|.
+      lo_parallel->new_task( iv_taskname = lv_taskname
+                             iv_progid   = sy-repid
+                             iv_formname = 'SIMULATE_ORDERS'
+                             iv_parameters = <chunk> ).
+    ENDLOOP.
+
+* Start and wait for all tasks to finish
+    lo_parallel->start( ).
+    lo_parallel->wait_all( ).
+
+* Collect results
+    LOOP AT lt_chunks.
+      IMPORT lt_local_suc = DATA(lt_suc) lt_local_err = DATA(lt_err) FROM MEMORY ID 'SIM_ORDER_RESULT'.
+      APPEND LINES OF lt_suc TO lt_all_sucorders.
+      APPEND LINES OF lt_err TO lt_all_errorders.
+    ENDLOOP.
+
+    gt_sucorders = lt_all_sucorders.
+    gt_errorders = lt_all_errorders.
+  ENDMETHOD.
+
+  METHOD display_output.
+    DATA: gr_table TYPE REF TO cl_salv_table.
+
+    TRY.
+        cl_salv_table=>factory( IMPORTING r_salv_table = gr_table CHANGING t_table = gt_sucorders ).
+        gr_table->display( ).
+      CATCH cx_root INTO DATA(lo_cx_root).
+        WRITE lo_cx_root->get_text( ).
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+*& Form SIMULATE_ORDERS
+*---------------------------------------------------------------------*
+FORM simulate_orders USING it_orders TYPE ty_orders.
+  DATA(lo_obj) = NEW lcl_order_creation( ).
+  lo_obj->simulate_orders( it_orders = it_orders ).
+ENDFORM.
+
