@@ -1,106 +1,445 @@
 *&---------------------------------------------------------------------*
+*& Report zsim_ord_poc
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zsim_ord_poc MESSAGE-ID zotc
+                            NO STANDARD PAGE HEADING.
+
+
+INCLUDE zsim_ord_poc_top." Global Data Declaration
+INCLUDE zsim_ord_poc_sel." Selection Screen
+INCLUDE zsim_ord_poc_f01." Processing Logic
+
+START-OF-SELECTION.
+
+  DATA(lo_obj) = NEW lcl_order_creation( ).
+
+* Fetch Customer Data
+  lo_obj->fetch_data( ).
+
+  IF gt_orders IS NOT INITIAL.
+
+* Process Data
+    lo_obj->process_data( ).
+* Display Output
+    lo_obj->display_output( ).
+
+  ENDIF.
+
+"-----------------------------------------------------------------------------------------------------------------
+
+*&---------------------------------------------------------------------*
+*&  Include  zsim_ord_poc_top
+*&---------------------------------------------------------------------*
+
+    TYPES: BEGIN OF ty_orders,
+             vbeln   TYPE vbak-vbeln,
+             auart   TYPE vbak-auart,
+             vkorg   TYPE vbak-vkorg,
+             vtweg   TYPE vbak-vtweg,
+             spart   TYPE vbak-spart,
+             kunnr   TYPE vbak-kunnr,
+             posnr   TYPE vbap-posnr,
+             matnr   TYPE vbap-matnr,
+             werks   TYPE vbap-werks,
+*             ship_to TYPE vbpa-kunnr,
+           END OF ty_orders.
+    DATA: gv_count     TYPE i VALUE 0,
+          gv_errcount  TYPE i VALUE 0,
+          gt_orders    TYPE TABLE OF ty_orders,
+          gs_sucorders TYPE ty_orders,
+          gs_errorders TYPE ty_orders,
+          gt_sucorders TYPE TABLE OF ty_orders,
+          gt_errorders TYPE TABLE OF ty_orders.
+
+    CLASS lcl_order_creation DEFINITION.
+      PUBLIC SECTION.
+        METHODS:
+          fetch_data,
+          process_data,
+          display_output.
+
+    ENDCLASS.
+
+"-----------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*&  Include  zsim_ord_poc_sel
+*&---------------------------------------------------------------------*
+
+DATA: gv_kunnr TYPE kna1-kunnr,
+      gv_vkorg TYPE vbak-vkorg,
+      gv_vtweg TYPE vbak-vtweg,
+      gv_spart TYPE vbak-spart,
+      gv_matnr TYPE vbap-matnr,
+      gv_werks TYPE vbap-werks.
+
+SELECTION-SCREEN: BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
+
+SELECT-OPTIONS: s_kunnr FOR gv_kunnr.                           " Customer Number
+SELECT-OPTIONS: s_vkorg FOR gv_vkorg NO INTERVALS NO-EXTENSION. " Sales Org
+SELECT-OPTIONS: s_vtweg FOR gv_vtweg NO INTERVALS NO-EXTENSION, " Dist Channel
+                s_spart FOR gv_spart NO INTERVALS NO-EXTENSION, " Division
+                s_matnr FOR gv_matnr,
+                s_werks FOR gv_werks.
+
+SELECTION-SCREEN: END OF BLOCK blk1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK blk2 WITH FRAME TITLE TEXT-002.
+
+PARAMETERS: p_ordctr TYPE i DEFAULT 3 OBLIGATORY.   " Number of Orders to Simulate
+
+SELECTION-SCREEN: END OF BLOCK blk2.
+
+"-----------------------------------------------------------------------------------------------------------------
+
+*&---------------------------------------------------------------------*
 *&  Include  zsim_ord_poc_f01
 *&---------------------------------------------------------------------*
 
 CLASS lcl_order_creation IMPLEMENTATION.
 
-METHOD fetch_data.
-  DATA: lv_date TYPE syst_datum.
-  DATA(lv_count) = p_ordctr * 100.
+  METHOD fetch_data.
 
-  CALL FUNCTION 'CCM_GO_BACK_MONTHS'
-    EXPORTING
-      currdate   = sy-datum
-      backmonths = 60
-    IMPORTING
-      newdate    = lv_date.
+    DATA: lv_date TYPE syst_datum.
 
-  SELECT vbak~auart, vbak~vtweg, vbak~kunnr, vbap~matnr, vbap~werks,
-         vbpa~kunnr AS ship_to
-    FROM vbak AS vbak
-    INNER JOIN vbap AS vbap ON vbak~vbeln = vbap~vbeln
-    INNER JOIN kna1 AS kna1 ON vbak~kunnr = kna1~kunnr
-    INNER JOIN vbpa AS vbpa ON vbak~vbeln = vbpa~vbeln
-    INTO TABLE @gt_orders
-    UP TO @lv_count ROWS
-    WHERE vbak~vkorg IN @s_vkorg
-      AND vbak~vtweg IN @s_vtweg
-      AND vbak~spart IN @s_spart
-      AND vbak~kunnr IN @s_kunnr
-      AND vbap~matnr IN @s_matnr
-      AND vbap~werks IN @s_werks
-      AND vbpa~parvw = 'SH'
-      AND vbak~erdat >= @lv_date
-      AND vbak~erdat <= @sy-datum.
+    DATA(lv_count) = p_ordctr * 100.
 
-  IF sy-subrc = 0.
-    SORT gt_orders BY kunnr matnr.
-    DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
-  ENDIF.
-ENDMETHOD.
 
-METHOD process_data.
-  DATA: lt_tasks TYPE TABLE OF REF TO cl_abap_task,
-        lo_task  TYPE REF TO cl_abap_task.
+*    DATA(lv_date) = sy-datum - 1095.
 
-  LOOP AT gt_orders INTO DATA(ls_order).
-    CREATE OBJECT lo_task TYPE cl_abap_task EXPORTING name = 'Z_SIM_ORDER'.
-    lo_task->set_task_handler( iv_handler = 'HANDLE_SIMULATION' ).
-    lo_task->set_data( iv_data = ls_order ).
-    lo_task->start( ).
-    APPEND lo_task TO lt_tasks.
-  ENDLOOP.
+    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+      EXPORTING
+        currdate   = sy-datum
+        backmonths = 60
+      IMPORTING
+        newdate    = lv_date.
 
-  LOOP AT lt_tasks INTO lo_task.
-    lo_task->wait( ).
-  ENDLOOP.
-ENDMETHOD.
+* Get the Existing Orders from the system for past 1 year
+    SELECT  vbak~vbeln,
+            vbak~auart,
+            vbak~vkorg,
+            vbak~vtweg,
+            vbak~spart,
+            vbak~kunnr,
+            vbap~posnr,
+            vbap~matnr,
+            vbap~werks
+*            vbpa~kunnr AS ship_to
+         FROM vbak AS vbak
+            INNER JOIN vbap AS vbap
+            ON vbak~vbeln = vbap~vbeln
+*            INNER JOIN kna1 AS kna1
+*            ON vbak~kunnr = kna1~kunnr
+*            INNER JOIN vbpa AS vbpa
+*            ON vbak~vbeln = vbpa~vbeln
+         INTO TABLE @gt_orders
+         UP TO @lv_count ROWS
+       WHERE vbak~vkorg         IN @s_vkorg
+       AND   vbak~vtweg         IN @s_vtweg
+       AND   vbak~spart         IN @s_spart
+       AND   vbak~kunnr         IN @s_kunnr
+       AND   vbap~matnr         IN @s_matnr
+       AND   vbap~werks         IN @s_werks
+*       AND   vbpa~parvw         EQ 'SH'.
+       AND   vbak~erdat >= @lv_date AND vbak~erdat <= @sy-datum.
 
-METHOD handle_simulation.
-  DATA: ls_order TYPE ty_orders,
-        lv_vbeln TYPE vbeln,
-        lt_return TYPE TABLE OF bapiret2,
-        lt_item TYPE TABLE OF bapiitemin,
-        lt_partners TYPE TABLE OF bapipartnr.
 
-  ls_order = iv_data.
 
-  "Simulate order creation logic
-  lt_partners = VALUE #( ( partn_role = 'AG' partn_numb = ls_order-kunnr ) ).
+    IF sy-subrc = 0.
 
-  CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
-    EXPORTING
-      order_header_in = ls_order
-    IMPORTING
-      salesdocument   = lv_vbeln
-    TABLES
-      order_items_in  = lt_item
-      order_partners  = lt_partners
-      messagetable    = lt_return.
+      SORT gt_orders BY kunnr matnr.
+      DELETE ADJACENT DUPLICATES FROM gt_orders COMPARING kunnr matnr.
 
-  IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
-    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
-  ENDIF.
-ENDMETHOD.
+    ENDIF.
 
-METHOD display_output.
-  DATA: gr_table TYPE REF TO cl_salv_table,
-        gr_functions TYPE REF TO cl_salv_functions,
-        gr_display TYPE REF TO cl_salv_display_settings.
 
-  TRY.
-      cl_salv_table=>factory(
-        IMPORTING r_salv_table = gr_table
-        CHANGING  t_table      = gt_sucorders ).
-      gr_functions = gr_table->get_functions( ).
-      gr_functions->set_all( abap_true ).
-      gr_display = gr_table->get_display_settings( ).
-      gr_display->set_list_header('Sales Order Simulation').
-      gr_table->display( ).
-    CATCH cx_root INTO DATA(lo_cx_root).
-      DATA(lv_text) = lo_cx_root->get_text( ).
-      WRITE lv_text.
-  ENDTRY.
-ENDMETHOD.
+  ENDMETHOD.
+
+  METHOD process_data.
+
+    CONSTANTS:lc_x TYPE char01 VALUE 'X'.
+
+* To Create Order
+    DATA: lv_index          TYPE i VALUE 1,
+          lv_itemno         TYPE posnr VALUE 10,
+          ls_header         TYPE bapisdhead,
+          ls_ord_header     TYPE bapisdhd1,
+          ls_ord_headerx    TYPE bapisdhd1x,
+          ls_headerx        TYPE bapisdheadx,
+          ls_item           TYPE bapiitemin,
+          lt_ord_item       TYPE TABLE OF bapisditm,
+          lt_ord_itemx      TYPE TABLE OF bapisditmx,
+          lv_vbeln          TYPE vbeln,
+          lv_lines          TYPE i,
+          lt_item           TYPE TABLE OF bapiitemin,
+          lt_partners       TYPE TABLE OF bapipartnr,
+          lt_return         TYPE TABLE OF bapiret2,
+          lt_order_partners TYPE TABLE OF bapiparnr.
+
+
+    DATA(lo_rand) = cl_abap_random=>create( ).
+
+    lv_lines = lines( gt_orders ).
+
+
+    WHILE gv_count < p_ordctr.
+
+      TRY.
+* Stop the program if the iteration exceed the number of orders has been selected.
+          IF sy-index = lv_lines.
+
+            EXIT.
+
+          ENDIF.
+
+          DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
+          CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+            EXPORTING
+                percentage = lv_progress
+                text = |Simulation Progress : { lv_progress } %|.
+
+
+* Copy header from the orders
+* Get a random customer and header data details
+
+          DATA(ls_order) = VALUE ty_orders( gt_orders[ lo_rand->intinrange( low = 1 high = lv_lines ) ] ).
+
+          ls_header = CORRESPONDING #( ls_order MAPPING doc_type    = auart
+                                                        sales_org   = vkorg
+                                                        distr_chan  = vtweg
+                                                        division    = spart ).
+
+* Copy 3 Item from the orders randomly
+* Some order will have 1 or 2 or 3 material based on error list
+          DO 3 TIMES.
+
+
+            DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
+
+            ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
+                                                                          plant    = werks ).
+
+
+
+* IF same combination exit, go ahead and pick the next material
+            IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
+
+              CONTINUE.
+
+            ENDIF.
+
+            ls_item-po_itm_no = lv_itemno.
+            ls_item-target_qty = 1.
+
+            APPEND ls_item TO lt_item.
+            CLEAR ls_item.
+            lv_itemno = lv_itemno + 10.
+
+            APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
+
+          ENDDO.
+
+* if no item exist then proceed with next combination
+          IF lt_item[] IS INITIAL.
+
+            CONTINUE.
+
+          ENDIF.
+
+          lt_order_partners = VALUE #( ( partn_role = 'AG'
+                                         partn_numb = ls_order-kunnr ) ).
+                                         
+          CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+            EXPORTING
+              order_header_in = ls_header
+            IMPORTING
+              salesdocument   = lv_vbeln
+            TABLES
+              order_items_in  = lt_item
+              order_partners  = lt_order_partners
+              messagetable    = lt_return.
+
+*         order_partners  = it_order_partners.
+          IF line_exists( lt_return[ type = 'E' ] ).
+
+            gv_errcount = gv_errcount + 1.
+
+            gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
+
+            LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
+
+              gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
+                                                                                       werks = plant      ).
+
+              APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
+
+            ENDLOOP.
+
+
+          ELSE.
+
+            ls_ord_header  = CORRESPONDING #( ls_header ).
+            ls_ord_headerx = VALUE #( doc_type    = abap_true
+                                      sales_org   = abap_true
+                                      distr_chan  = abap_true
+                                      division    = abap_true ).
+
+            lt_ord_item    = CORRESPONDING #( lt_item ).
+
+            CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+              EXPORTING
+                order_header_in  = ls_ord_header
+                order_header_inx = ls_ord_headerx
+              IMPORTING
+                salesdocument    = lv_vbeln
+              TABLES
+                return           = lt_return
+                order_items_in   = lt_ord_item
+                order_items_inx  = lt_ord_itemx
+                order_partners   = lt_order_partners.
+
+            IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
+
+** Commit the BAPI Transaction
+              CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+                EXPORTING
+                  wait = abap_true.
+
+              gs_sucorders = CORRESPONDING #( ls_order EXCEPT vbeln matnr ).
+              gs_sucorders-vbeln = lv_vbeln.
+
+
+              LOOP AT lt_item ASSIGNING <lfs_item>.
+
+                gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
+                                                                                         werks = plant
+                                                                                         posnr = po_itm_no ).
+
+
+                APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
+
+              ENDLOOP.
+
+              gv_count = gv_count + 1.
+
+            ENDIF.
+
+          ENDIF.
+
+        CATCH cx_root INTO DATA(lo_cx_root).
+
+          DATA(lv_text) = lo_cx_root->get_text( ).
+
+          IF sy-batch = abap_true.
+            WRITE lv_text.
+          ENDIF.
+
+      ENDTRY.
+
+
+* Reset all data
+      lv_index = lv_index + 1. " Next line
+
+      CLEAR: ls_order, gs_sucorders, gs_errorders, ls_ord_header, ls_ord_headerx, ls_header, ls_headerx,
+             lt_item[], lt_ord_item[], lt_ord_itemx[], lt_order_partners[], lt_return[], lv_itemno.
+
+
+*  Reset the item number back to 10
+      lv_itemno = 10.
+
+    ENDWHILE.
+
+  ENDMETHOD.
+  
+
+  METHOD display_output.
+
+    DATA: gr_table     TYPE REF TO cl_salv_table.
+    DATA: gr_functions TYPE REF TO cl_salv_functions.
+    DATA: gr_display     TYPE REF TO cl_salv_display_settings,
+          lo_grid_layout TYPE REF TO cl_salv_form_layout_grid.
+
+
+    TRY.
+
+        cl_salv_table=>factory( IMPORTING r_salv_table = gr_table
+                                CHANGING  t_table   = gt_sucorders ).
+
+
+        gr_functions = gr_table->get_functions( ).
+        gr_functions->set_all( abap_true ).
+
+        gr_display = gr_table->get_display_settings( ).
+        gr_display->set_list_header('Sales Order Simulation').
+
+
+        CREATE OBJECT lo_grid_layout.
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 1
+            column      = 1
+            text        = 'Total number of Sales Order Created: ' ).
+
+*-- Create normal text
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 1
+            column      = 2
+            text        = gv_count
+            tooltip     = gv_count ).
+
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 2
+            column      = 1
+            text        = 'Total number of Simulation: ' ).
+
+*-- Create normal text
+        gv_errcount = gv_errcount + gv_count.
+
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 2
+            column      = 2
+            text        = gv_errcount
+            tooltip     = gv_errcount ).
+
+        lo_grid_layout->create_label(
+          EXPORTING
+            row         = 3
+            column      = 1
+            text        = 'Date' ).
+
+        lo_grid_layout->create_text(
+          EXPORTING
+            row         = 3
+            column      = 2
+            text        = sy-datum ).
+
+        gr_table->set_top_of_list( value = lo_grid_layout ). "Header
+
+
+        gr_table->display( ).
+
+      "CATCH cl
+      CATCH cx_root INTO DATA(lo_cx_root).
+
+        DATA(lv_text) = lo_cx_root->get_text( ).
+        WRITE lv_text.
+
+
+    ENDTRY.
+
+  ENDMETHOD.
+
+
 
 ENDCLASS.
+
+form simulation_finished using v_taskname.
+
+endform.
+"-----------------------------------------------------------------------------------------------------------------
