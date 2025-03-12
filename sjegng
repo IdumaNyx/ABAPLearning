@@ -1,1 +1,53 @@
-klhj;
+REPORT z_alv_report_tabs.
+
+TABLES: kna1, mara.
+
+TYPES: BEGIN OF ty_kna1,
+         kunnr TYPE kna1-kunnr,
+         name1 TYPE kna1-name1,
+         ort01 TYPE kna1-ort01,
+         land1 TYPE kna1-land1,
+       END OF ty_kna1.
+
+TYPES: BEGIN OF ty_mara,
+         matnr TYPE mara-matnr,
+         ersda TYPE mara-ersda,
+         ernam TYPE mara-ernam,
+         matkl TYPE mara-matkl,
+       END OF ty_mara.
+
+DATA: it_kna1 TYPE TABLE OF ty_kna1,
+      it_mara TYPE TABLE OF ty_mara,
+      o_alv_kna1 TYPE REF TO cl_gui_alv_grid,
+      o_alv_mara TYPE REF TO cl_gui_alv_grid,
+      o_dock     TYPE REF TO cl_gui_docking_container,
+      o_splitter TYPE REF TO cl_gui_splitter_container,
+      o_cont_kna1 TYPE REF TO cl_gui_container,
+      o_cont_mara TYPE REF TO cl_gui_container.
+
+START-OF-SELECTION.
+
+  SELECT kunnr name1 ort01 land1 FROM kna1 INTO TABLE it_kna1 UP TO 100 ROWS.
+  SELECT matnr ersda ernam matkl FROM mara INTO TABLE it_mara UP TO 100 ROWS.
+
+  CREATE OBJECT o_dock EXPORTING ratio = 90.
+  CREATE OBJECT o_splitter EXPORTING parent = o_dock rows = 1 columns = 2.
+
+  CALL METHOD o_splitter->get_container EXPORTING row = 1 column = 1 RECEIVING container = o_cont_kna1.
+  CALL METHOD o_splitter->get_container EXPORTING row = 1 column = 2 RECEIVING container = o_cont_mara.
+
+  CREATE OBJECT o_alv_kna1 EXPORTING i_parent = o_cont_kna1.
+  CREATE OBJECT o_alv_mara EXPORTING i_parent = o_cont_mara.
+
+  CALL METHOD o_alv_kna1->set_table_for_first_display
+    EXPORTING
+      i_structure_name = 'TY_KNA1'
+    CHANGING
+      it_outtab = it_kna1.
+
+  CALL METHOD o_alv_mara->set_table_for_first_display
+    EXPORTING
+      i_structure_name = 'TY_MARA'
+    CHANGING
+      it_outtab = it_mara.
+
