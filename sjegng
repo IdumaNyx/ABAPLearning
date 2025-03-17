@@ -1,3 +1,41 @@
+FORM TOP_PAGE1.
+  DATA: lt_list_commentary TYPE slis_t_listheader,
+        ls_list_commentary TYPE slis_listheader.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'H'.  " Header
+  ls_list_commentary-info = 'Successful Sales Order Simulation Report'.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'S'.  " Selection Info
+  ls_list_commentary-info = |Total Orders Created: { gv_count }|.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_list_commentary.
+ENDFORM.
+
+FORM TOP_PAGE2.
+  DATA: lt_list_commentary TYPE slis_t_listheader,
+        ls_list_commentary TYPE slis_listheader.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'H'.  " Header
+  ls_list_commentary-info = 'Error Orders Simulation Report'.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'S'.  " Selection Info
+  ls_list_commentary-info = |Total Errors: { gv_errcount }|.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_list_commentary.
+ENDFORM.
+
 *&---------------------------------------------------------------------*
 *& Report zsim_ord_poc
 *&---------------------------------------------------------------------*
