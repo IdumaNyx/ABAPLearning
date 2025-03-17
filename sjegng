@@ -42,6 +42,7 @@ START-OF-SELECTION.
              posnr TYPE vbap-posnr,
              matnr TYPE vbap-matnr,
              werks TYPE vbap-werks,
+             message TYPE bapiret2-message,
              "error tab
 *             ship_to TYPE vbpa-kunnr,
            END OF ty_orders.
@@ -289,6 +290,11 @@ CLASS lcl_order_creation IMPLEMENTATION.
               order_partners    = lt_order_partners
               order_schedule_in = lt_schedule
               messagetable      = lt_return.
+
+          LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>) WHERE type = 'E'.
+            gs_errorders-message = <ls_return>-message.
+            APPEND gs_errorders TO gt_errorders.
+          ENDLOOP.
 
           IF line_exists( lt_return[ type = 'E' ] ).
 
@@ -734,6 +740,15 @@ FORM populate_fieldcat.
   ls_fieldcat-fieldname = 'D_WERKS'.
   ls_fieldcat-tabname = 'gt_errorders'.
   ls_fieldcat-seltext_m = 'Plant'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '10'.
+  ls_fieldcat-fieldname = 'MESSAGE'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Error Message'.
+  ls_fieldcat-outputlen = 100.
+  ls_fieldcat-edit = 'X'.
   APPEND ls_fieldcat TO lt_fieldcat_err.
   CLEAR ls_fieldcat.
 
