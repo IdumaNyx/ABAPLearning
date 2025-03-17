@@ -1,41 +1,3 @@
-FORM TOP_PAGE1.
-  DATA: lt_list_commentary TYPE slis_t_listheader,
-        ls_list_commentary TYPE slis_listheader.
-
-  CLEAR ls_list_commentary.
-  ls_list_commentary-typ  = 'H'.  " Header
-  ls_list_commentary-info = 'Successful Sales Order Simulation Report'.
-  APPEND ls_list_commentary TO lt_list_commentary.
-
-  CLEAR ls_list_commentary.
-  ls_list_commentary-typ  = 'S'.  " Selection Info
-  ls_list_commentary-info = |Total Orders Created: { gv_count }|.
-  APPEND ls_list_commentary TO lt_list_commentary.
-
-  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
-    EXPORTING
-      it_list_commentary = lt_list_commentary.
-ENDFORM.
-
-FORM TOP_PAGE2.
-  DATA: lt_list_commentary TYPE slis_t_listheader,
-        ls_list_commentary TYPE slis_listheader.
-
-  CLEAR ls_list_commentary.
-  ls_list_commentary-typ  = 'H'.  " Header
-  ls_list_commentary-info = 'Error Orders Simulation Report'.
-  APPEND ls_list_commentary TO lt_list_commentary.
-
-  CLEAR ls_list_commentary.
-  ls_list_commentary-typ  = 'S'.  " Selection Info
-  ls_list_commentary-info = |Total Errors: { gv_errcount }|.
-  APPEND ls_list_commentary TO lt_list_commentary.
-
-  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
-    EXPORTING
-      it_list_commentary = lt_list_commentary.
-ENDFORM.
-
 *&---------------------------------------------------------------------*
 *& Report zsim_ord_poc
 *&---------------------------------------------------------------------*
@@ -71,22 +33,23 @@ START-OF-SELECTION.
 *&---------------------------------------------------------------------*
 
     TYPES: BEGIN OF ty_orders,
-             vbeln TYPE vbak-vbeln,
-             auart TYPE vbak-auart,
-             vkorg TYPE vbak-vkorg,
-             vtweg TYPE vbak-vtweg,
-             spart TYPE vbak-spart,
-             kunnr TYPE vbak-kunnr,
-             posnr TYPE vbap-posnr,
-             matnr TYPE vbap-matnr,
-             werks TYPE vbap-werks,
+             vbeln   TYPE vbak-vbeln,
+             auart   TYPE vbak-auart,
+             vkorg   TYPE vbak-vkorg,
+             vtweg   TYPE vbak-vtweg,
+             spart   TYPE vbak-spart,
+             kunnr   TYPE vbak-kunnr,
+             posnr   TYPE vbap-posnr,
+             matnr   TYPE vbap-matnr,
+             werks   TYPE vbap-werks,
              message TYPE bapiret2-message,
              "error tab
 *             ship_to TYPE vbpa-kunnr,
            END OF ty_orders.
-           
+
     DATA: gv_count     TYPE i VALUE 0,
           gv_errcount  TYPE i VALUE 0,
+          gv_totcount  TYPE i,
           gt_orders    TYPE TABLE OF ty_orders,
           gs_sucorders TYPE ty_orders,
           gs_errorders TYPE ty_orders,
@@ -100,16 +63,12 @@ START-OF-SELECTION.
 
     CLASS lcl_order_creation DEFINITION.
       PUBLIC SECTION.
-        TYPES: BEGIN OF ty_shared,
-                 simulation_mode TYPE c LENGTH 1,
-               END OF ty_shared.
         METHODS:
           fetch_data,
           process_data,
           display_output.
 
     ENDCLASS.
-
 
 
 *&---------------------------------------------------------------------*
@@ -145,20 +104,16 @@ SELECTION-SCREEN: END OF BLOCK blk2.
 
 
 *&---------------------------------------------------------------------*
-*&  Include  zsim_ord_poc_f01
+*&  Include  zmotc_simulate_orders_f01
 *&---------------------------------------------------------------------*
-
-
-
 
 CLASS lcl_order_creation IMPLEMENTATION.
 
   METHOD fetch_data.
 
-    DATA: lv_date TYPE syst_datum.
+    DATA lv_date TYPE syst_datum.
 
     DATA(lv_count) = p_ordctr * 100.
-
 
 *    DATA(lv_date) = sy-datum - 1095.
 
@@ -183,8 +138,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
          FROM vbak AS vbak
             INNER JOIN vbap AS vbap
             ON vbak~vbeln = vbap~vbeln
-*            INNER JOIN kna1 AS kna1
-*            ON vbak~kunnr = kna1~kunnr
 *            INNER JOIN vbpa AS vbpa
 *            ON vbak~vbeln = vbpa~vbeln
          INTO TABLE @gt_orders
@@ -199,8 +152,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
 *       AND   vbpa~parvw         EQ 'SH'.
        AND   vbak~erdat >= @lv_date AND vbak~erdat <= @sy-datum.
 
-
-
     IF sy-subrc = 0.
 
       SORT gt_orders BY kunnr matnr.
@@ -210,6 +161,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
 
   ENDMETHOD.
+
 
   METHOD process_data.
 
@@ -245,19 +197,13 @@ CLASS lcl_order_creation IMPLEMENTATION.
     WHILE gv_count < p_ordctr.
 
       TRY.
+
 * Stop the program if the iteration exceed the number of orders has been selected.
           IF sy-index = lv_lines.
 
             EXIT.
 
           ENDIF.
-
-          DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
-          CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
-            EXPORTING
-              percentage = lv_progress
-              text       = |Simulation Progress : { lv_progress } %|.
-
 
 * Copy header from the orders
 * Get a random customer and header data details
@@ -273,13 +219,10 @@ CLASS lcl_order_creation IMPLEMENTATION.
 * Some order will have 1 or 2 or 3 material based on error list
           DO 3 TIMES.
 
-
             DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
 
             ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
                                                                           plant    = werks ).
-
-
 
 * IF same combination exit, go ahead and pick the next material
             IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
@@ -290,21 +233,23 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
             ls_item-po_itm_no = lv_itemno.
             ls_item-target_qty = '1.000'.
-            ls_item-sales_unit = 'EA'.
+            "ls_item-sales_unit = 'EA'.
 
             APPEND ls_item TO lt_item.
-            CLEAR ls_item.
+
 
             ls_schedule-itm_number = lv_itemno.
             ls_schedule-req_qty = ls_item-target_qty.
             ls_schedule-req_date = sy-datum.
             APPEND ls_schedule TO lt_schedule.
-            CLEAR ls_schedule.
+
+
+            APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
+            APPEND VALUE #( itm_number = lv_itemno req_qty = abap_true req_date = abap_true ) TO lt_ord_schdx.
 
             lv_itemno = lv_itemno + 10.
 
-            APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
-            APPEND VALUE #( itm_number = abap_true req_qty = abap_true req_date = abap_true ) TO lt_ord_schdx.
+            CLEAR : ls_item, ls_schedule.
           ENDDO.
 
 * if no item exist then proceed with next combination
@@ -317,7 +262,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
           lt_order_partners = VALUE #( ( partn_role = 'AG'
                                          partn_numb = ls_order-kunnr ) ).
 
-
+          CLEAR lv_vbeln.
           CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
             EXPORTING
               order_header_in   = ls_header
@@ -337,7 +282,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
           IF line_exists( lt_return[ type = 'E' ] ).
 
             gv_errcount = gv_errcount + 1.
-
+            gs_errorders-vbeln = ''.
             gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
 
             LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
@@ -349,6 +294,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
               "
 
             ENDLOOP.
+
 
 
           ELSE.
@@ -364,17 +310,17 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
             CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
               EXPORTING
-                order_header_in  = ls_ord_header
-                order_header_inx = ls_ord_headerx
+                order_header_in    = ls_ord_header
+                order_header_inx   = ls_ord_headerx
               IMPORTING
-                salesdocument    = lv_vbeln
+                salesdocument      = lv_vbeln
               TABLES
-                return           = lt_return
-                order_items_in   = lt_ord_item
-                order_items_inx  = lt_ord_itemx
+                return             = lt_return
+                order_items_in     = lt_ord_item
+                order_items_inx    = lt_ord_itemx
                 order_schedules_in = lt_ord_schd
-                order_schedules_inx = lt_ord_schdx
-                order_partners   = lt_order_partners.
+              " order_schedules_inx = lt_ord_schdx
+                order_partners     = lt_order_partners.
 
             IF NOT line_exists( lt_return[ type = 'E' ] ) AND lv_vbeln IS NOT INITIAL.
 
@@ -429,7 +375,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
   ENDMETHOD.
 
-
   METHOD display_output.
 
     DATA: v_repid      TYPE syrepid,
@@ -443,6 +388,9 @@ CLASS lcl_order_creation IMPLEMENTATION.
           it_events_suc TYPE slis_t_event,
           it_events_err TYPE slis_t_event,
           wa_events     TYPE LINE OF slis_t_event.
+
+
+    v_repid = sy-repid.
 
     PERFORM populate_fieldcat.
 
@@ -470,7 +418,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
         it_fieldcat                = lt_fieldcat_suc
         i_tabname                  = i_tabname
         it_events                  = it_events_suc
-      " i_text                     = 'Successful orders'
       TABLES
         t_outtab                   = gt_sucorders
       EXCEPTIONS
@@ -478,9 +425,9 @@ CLASS lcl_order_creation IMPLEMENTATION.
         maximum_of_appends_reached = 2
         OTHERS                     = 3.
 
-      IF sy-subrc <> 0.
+    IF sy-subrc <> 0.
 
-      ENDIF.
+    ENDIF.
 
     i_tabname = 'gt_errorders'.
 
@@ -495,7 +442,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
         it_fieldcat                = lt_fieldcat_err
         i_tabname                  = i_tabname
         it_events                  = it_events_err
-       "i_text                     = text-004
       TABLES
         t_outtab                   = gt_errorders
       EXCEPTIONS
@@ -503,215 +449,123 @@ CLASS lcl_order_creation IMPLEMENTATION.
         maximum_of_appends_reached = 2
         OTHERS                     = 3.
 
-      IF sy-subrc <> 0.
+    IF sy-subrc <> 0.
 
-      ENDIF.
+    ENDIF.
 
     CALL FUNCTION 'REUSE_ALV_BLOCK_LIST_DISPLAY'
-*                 EXPORTING
-*                   I_INTERFACE_CHECK             = ' '
-*                   IS_PRINT                      =
-*                   I_SCREEN_START_COLUMN         = 0
-*                   I_SCREEN_START_LINE           = 0
-*                   I_SCREEN_END_COLUMN           = 0
-*                   I_SCREEN_END_LINE             = 0
-*                 IMPORTING
-*                   E_EXIT_CAUSED_BY_CALLER       =
-*                   ES_EXIT_CAUSED_BY_USER        =
       EXCEPTIONS
         program_error = 1
         OTHERS        = 2.
 
-      IF sy-subrc <> 0.
+    IF sy-subrc <> 0.
 
-      ENDIF.
+    ENDIF.
 
 
   ENDMETHOD.
-*    TRY.
-*
-*        cl_salv_table=>factory(
-*                                IMPORTING r_salv_table = gr_table_suc
-*                                CHANGING  t_table   = gt_sucorders ).
-*
-*
-*        gr_functions = gr_table_suc->get_functions( ).
-*        gr_functions->set_all( abap_true ).
-*
-*        gr_display = gr_table_suc->get_display_settings( ).
-*        gr_display->set_list_header('Sales Order Simulation').
-*
-*
-*        CREATE OBJECT lo_grid_layout.
-*
-*        lo_grid_layout->create_label(
-*          EXPORTING
-*            row         = 1
-*            column      = 1
-*            text        = 'Total number of Sales Order Created: ' ).
-*
-**-- Create normal text
-*        lo_grid_layout->create_text(
-*          EXPORTING
-*            row         = 1
-*            column      = 2
-*            text        = gv_count
-*            tooltip     = gv_count ).
-*
-*
-*        lo_grid_layout->create_label(
-*          EXPORTING
-*            row         = 2
-*            column      = 1
-*            text        = 'Total number of Simulation: ' ).
-*
-**-- Create normal text
-*        gv_errcount = gv_errcount + gv_count.
-*
-*        lo_grid_layout->create_text(
-*          EXPORTING
-*            row         = 2
-*            column      = 2
-*            text        = gv_errcount
-*            tooltip     = gv_errcount ).
-*
-*        lo_grid_layout->create_label(
-*          EXPORTING
-*            row         = 3
-*            column      = 1
-*            text        = 'Date' ).
-*
-*        lo_grid_layout->create_text(
-*          EXPORTING
-*            row         = 3
-*            column      = 2
-*            text        = sy-datum ).
-*
-*        gr_table_suc->set_top_of_list( value = lo_grid_layout ). "Header
-*
-*
-*        gr_table_suc->display( ).
-*
-*
-*
-*        "CATCH cl
-*      CATCH cx_root INTO DATA(lo_cx_root).
-*
-*        DATA(lv_text) = lo_cx_root->get_text( ).
-*        WRITE lv_text.
-*
-*    ENDTRY.
 
-* ENDMETHOD.
 
 
 ENDCLASS.
 
-FORM TOP_PAGE1.
-  WRITE 'SUCCESSFUL ORDERS'.
+FORM top_page1.
+  DATA: lt_list_commentary TYPE slis_t_listheader,
+        ls_list_commentary TYPE slis_listheader.
+
+  gv_totcount = gv_errcount + gv_count.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'H'.  " Header
+  ls_list_commentary-info = 'Successful Sales Order Simulation Report'.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'S'.  " Selection Info
+  ls_list_commentary-info = |Total Orders Created: { gv_count }|.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'S'.  " Selection Info
+  ls_list_commentary-info = |Total number of Simulation: { gv_totcount }|.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_list_commentary.
 ENDFORM.
 
-FORM TOP_PAGE2.
-  WRITE 'FAILED ORDERS'.
-ENDFORM.
+FORM top_page2.
+  DATA: lt_list_commentary TYPE slis_t_listheader,
+        ls_list_commentary TYPE slis_listheader.
 
-*FORM TOP_PAGE1.
-*  DATA: lt_list_commentary TYPE slis_t_listheader,
-*        ls_list_commentary TYPE slis_listheader.
-*
-*  CLEAR ls_list_commentary.
-*  ls_list_commentary-typ  = 'H'.  " Header
-*  ls_list_commentary-info = 'Successful Sales Order Simulation Report'.
-*  APPEND ls_list_commentary TO lt_list_commentary.
-*
-*  CLEAR ls_list_commentary.
-*  ls_list_commentary-typ  = 'S'.  " Selection Info
-*  ls_list_commentary-info = |Total Orders Created: { gv_count }|.
-*  APPEND ls_list_commentary TO lt_list_commentary.
-*
-*  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
-*    EXPORTING
-*      it_list_commentary = lt_list_commentary.
-*ENDFORM.
-*
-*FORM TOP_PAGE2.
-*  DATA: lt_list_commentary TYPE slis_t_listheader,
-*        ls_list_commentary TYPE slis_listheader.
-*
-*  CLEAR ls_list_commentary.
-*  ls_list_commentary-typ  = 'H'.  " Header
-*  ls_list_commentary-info = 'Error Orders Simulation Report'.
-*  APPEND ls_list_commentary TO lt_list_commentary.
-*
-*  CLEAR ls_list_commentary.
-*  ls_list_commentary-typ  = 'S'.  " Selection Info
-*  ls_list_commentary-info = |Total Errors: { gv_errcount }|.
-*  APPEND ls_list_commentary TO lt_list_commentary.
-*
-*  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
-*    EXPORTING
-*      it_list_commentary = lt_list_commentary.
-*ENDFORM.
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'H'.  " Header
+  ls_list_commentary-info = 'Error Orders Simulation Report'.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CLEAR ls_list_commentary.
+  ls_list_commentary-typ  = 'S'.  " Selection Info
+  ls_list_commentary-info = |Total Errors: { gv_errcount }|.
+  APPEND ls_list_commentary TO lt_list_commentary.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_list_commentary.
+ENDFORM.
 
 FORM populate_fieldcat.
 
   ls_fieldcat-col_pos = '1'.
-  ls_fieldcat-fieldname = 'VBELN'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Sales Document'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '2'.
   ls_fieldcat-fieldname = 'AUART'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sales Document Type'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '3'.
+  ls_fieldcat-col_pos = '2'.
   ls_fieldcat-fieldname = 'VKORG'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sales Organization'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '4'.
+  ls_fieldcat-col_pos = '3'.
   ls_fieldcat-fieldname = 'VTWEG'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Distribution Channel'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '5'.
+  ls_fieldcat-col_pos = '4'.
   ls_fieldcat-fieldname = 'SPART'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Division'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '6'.
+  ls_fieldcat-col_pos = '5'.
   ls_fieldcat-fieldname = 'KUNNR'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sold-To Party'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '7'.
+  ls_fieldcat-col_pos = '6'.
   ls_fieldcat-fieldname = 'POSNR'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Item'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '8'.
+  ls_fieldcat-col_pos = '7'.
   ls_fieldcat-fieldname = 'MATNR'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Material Number'.
   APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
-  ls_fieldcat-col_pos = '9'.
+  ls_fieldcat-col_pos = '8'.
   ls_fieldcat-fieldname = 'WERKS'.
   ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Plant'.
@@ -775,7 +629,7 @@ FORM populate_fieldcat.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '9'.
-  ls_fieldcat-fieldname = 'D_WERKS'.
+  ls_fieldcat-fieldname = 'WERKS'.
   ls_fieldcat-tabname = 'gt_errorders'.
   ls_fieldcat-seltext_m = 'Plant'.
   APPEND ls_fieldcat TO lt_fieldcat_err.
@@ -791,56 +645,3 @@ FORM populate_fieldcat.
   CLEAR ls_fieldcat.
 
 ENDFORM.
-
-
-IF line_exists( lt_return[ type = 'E' ] ).
-  gv_errcount = gv_errcount + 1.
-
-  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
-    READ TABLE lt_return ASSIGNING FIELD-SYMBOL(<ls_return>)
-      WITH KEY id = <lfs_item>-po_itm_no.
-
-    IF sy-subrc = 0.
-      gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
-                                      matnr = material
-                                      werks = plant
-                                      message = <ls_return>-message ).
-    ELSE.
-      gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
-                                      matnr = material
-                                      werks = plant
-                                      message = 'No specific error message' ).
-    ENDIF.
-
-    APPEND gs_errorders TO gt_errorders.
-  ENDLOOP.
-ENDIF.
-
-
-IF line_exists( lt_return[ type = 'E' ] ).
-  gv_errcount = gv_errcount + 1.
-
-  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
-
-    DATA(lv_message) = ''.
-
-    LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>)
-      WHERE id = 'ITEM' AND number = <lfs_item>-po_itm_no.
-
-      CONCATENATE lv_message <ls_return>-message INTO lv_message SEPARATED BY '; '.
-
-    ENDLOOP.
-
-    IF lv_message IS INITIAL.
-      lv_message = 'No specific error message'.
-    ENDIF.
-
-    gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
-                                    matnr = material
-                                    werks = plant
-                                    message = lv_message ).
-
-    APPEND gs_errorders TO gt_errorders.
-
-  ENDLOOP.
-ENDIF.
