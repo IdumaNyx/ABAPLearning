@@ -753,3 +753,27 @@ FORM populate_fieldcat.
   CLEAR ls_fieldcat.
 
 ENDFORM.
+
+
+IF line_exists( lt_return[ type = 'E' ] ).
+  gv_errcount = gv_errcount + 1.
+
+  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
+    READ TABLE lt_return ASSIGNING FIELD-SYMBOL(<ls_return>)
+      WITH KEY id = <lfs_item>-po_itm_no.
+
+    IF sy-subrc = 0.
+      gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
+                                      matnr = material
+                                      werks = plant
+                                      message = <ls_return>-message ).
+    ELSE.
+      gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
+                                      matnr = material
+                                      werks = plant
+                                      message = 'No specific error message' ).
+    ENDIF.
+
+    APPEND gs_errorders TO gt_errorders.
+  ENDLOOP.
+ENDIF.
