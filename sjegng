@@ -777,3 +777,32 @@ IF line_exists( lt_return[ type = 'E' ] ).
     APPEND gs_errorders TO gt_errorders.
   ENDLOOP.
 ENDIF.
+
+
+IF line_exists( lt_return[ type = 'E' ] ).
+  gv_errcount = gv_errcount + 1.
+
+  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
+
+    DATA(lv_message) = ''.
+
+    LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>)
+      WHERE id = 'ITEM' AND number = <lfs_item>-po_itm_no.
+
+      CONCATENATE lv_message <ls_return>-message INTO lv_message SEPARATED BY '; '.
+
+    ENDLOOP.
+
+    IF lv_message IS INITIAL.
+      lv_message = 'No specific error message'.
+    ENDIF.
+
+    gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING
+                                    matnr = material
+                                    werks = plant
+                                    message = lv_message ).
+
+    APPEND gs_errorders TO gt_errorders.
+
+  ENDLOOP.
+ENDIF.
