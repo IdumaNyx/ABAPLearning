@@ -1,3 +1,57 @@
+DATA: ls_edidc TYPE edidc,
+      lt_edidd TYPE TABLE OF edidd,
+      ls_edidd TYPE edidd,
+      lv_salesorder TYPE vbeln.
+
+* Fill Control record (mandatory fields)
+ls_edidc-mandt     = sy-mandt.
+ls_edidc-idoctp    = 'ORDERS05'.
+ls_edidc-mestyp    = 'ORDERS'.
+ls_edidc-rcvprt    = 'LS'.         " Logical system partner type
+ls_edidc-rcvprn    = 'TARGETSYS'.  " Replace with target system partner
+ls_edidc-sndprt    = 'LS'.
+ls_edidc-sndprn    = 'SOURCESYS'.  " Replace with sending system partner
+ls_edidc-direct    = '2'.          " Inbound IDoc
+ls_edidc-idoctyp   = 'ORDERS05'.
+
+* Header segment
+CLEAR ls_edidd.
+ls_edidd-segnam = 'E1EDK01'.
+ls_edidd-sdata = |{ 'ORDERS' ALPHA = OUT }{ sy-datum }{ sy-uzeit }{ 'EUR' }|.
+APPEND ls_edidd TO lt_edidd.
+
+* Partner segment (example for sold-to party)
+CLEAR ls_edidd.
+ls_edidd-segnam = 'E1EDKA1'.
+ls_edidd-sdata = |{ 'AG' }{ '0000123456' }|.  "AG = Sold-to party; Replace with customer
+APPEND ls_edidd TO lt_edidd.
+
+* Order Item segment (example for one line item)
+CLEAR ls_edidd.
+ls_edidd-segnam = 'E1EDP01'.
+ls_edidd-sdata = |{ '000010' }{ 'MATNR12345' }{ '10' }{ 'EA' }|.  " Item, material, quantity, unit
+APPEND ls_edidd TO lt_edidd.
+
+* You can add additional segments for conditions, texts, delivery date, etc. as per business needs.
+
+* Finally, call the function
+CALL FUNCTION 'IDOC_INPUT_ORDERS'
+  EXPORTING
+    pi_edidc      = ls_edidc
+  TABLES
+    pi_edidd      = lt_edidd
+  EXCEPTIONS
+    error_message = 1
+    OTHERS        = 2.
+
+IF sy-subrc = 0.
+  WRITE: / 'Sales order created via IDOC_INPUT_ORDERS.'.
+ELSE.
+  WRITE: / 'Error in creating sales order through IDoc interface.'.
+ENDIF.
+
+
+
 *&---------------------------------------------------------------------*
 *& Report zsim_ord_poc
 *&---------------------------------------------------------------------*
