@@ -1,53 +1,61 @@
-DATA: ls_edidc TYPE edidc,
-      lt_edidd TYPE TABLE OF edidd,
-      ls_edidd TYPE edidd,
-      lv_salesorder TYPE vbeln.
+DATA: lt_idoc_data   TYPE STANDARD TABLE OF edidd,
+      ls_idoc_data   TYPE edidd,
+      lt_idoc_status TYPE STANDARD TABLE OF bdidocstat,
+      ls_idoc_control TYPE edidc,
+      lv_doc_number  TYPE vbak-vbeln.
 
-* Fill Control record (mandatory fields)
-ls_edidc-mandt     = sy-mandt.
-ls_edidc-idoctp    = 'ORDERS05'.
-ls_edidc-mestyp    = 'ORDERS'.
-ls_edidc-rcvprt    = 'LS'.         " Logical system partner type
-ls_edidc-rcvprn    = 'TARGETSYS'.  " Replace with target system partner
-ls_edidc-sndprt    = 'LS'.
-ls_edidc-sndprn    = 'SOURCESYS'.  " Replace with sending system partner
-ls_edidc-direct    = '2'.          " Inbound IDoc
-ls_edidc-idoctyp   = 'ORDERS05'.
+* Fill control record
+CLEAR ls_idoc_control.
+ls_idoc_control-mandt   = sy-mandt.
+ls_idoc_control-idoctp  = 'ORDERS05'.
+ls_idoc_control-mestyp  = 'ORDERS'.
+ls_idoc_control-sndprn  = 'SOURCESYS'.   " Change to actual sender
+ls_idoc_control-sndprt  = 'LS'.
+ls_idoc_control-rcvprn  = 'TARGETSYS'.   " Change to actual receiver
+ls_idoc_control-rcvprt  = 'LS'.
+ls_idoc_control-direct  = '2'.  " Inbound processing
+ls_idoc_control-test    = space.
 
-* Header segment
-CLEAR ls_edidd.
-ls_edidd-segnam = 'E1EDK01'.
-ls_edidd-sdata = |{ 'ORDERS' ALPHA = OUT }{ sy-datum }{ sy-uzeit }{ 'EUR' }|.
-APPEND ls_edidd TO lt_edidd.
+* Fill header data segment
+CLEAR ls_idoc_data.
+ls_idoc_data-segnam = 'E1EDK01'.
+ls_idoc_data-sdata  = 'Your header-level IDOC data here - map fields from E1EDK01'.  " Fill segment fields in correct sequence
+APPEND ls_idoc_data TO lt_idoc_data.
 
-* Partner segment (example for sold-to party)
-CLEAR ls_edidd.
-ls_edidd-segnam = 'E1EDKA1'.
-ls_edidd-sdata = |{ 'AG' }{ '0000123456' }|.  "AG = Sold-to party; Replace with customer
-APPEND ls_edidd TO lt_edidd.
+* Partner data: sold-to
+CLEAR ls_idoc_data.
+ls_idoc_data-segnam = 'E1EDKA1'.
+ls_idoc_data-sdata  = 'AG0000123456...'.   " Partner function AG and customer number
+APPEND ls_idoc_data TO lt_idoc_data.
 
-* Order Item segment (example for one line item)
-CLEAR ls_edidd.
-ls_edidd-segnam = 'E1EDP01'.
-ls_edidd-sdata = |{ '000010' }{ 'MATNR12345' }{ '10' }{ 'EA' }|.  " Item, material, quantity, unit
-APPEND ls_edidd TO lt_edidd.
+* Item segment example
+CLEAR ls_idoc_data.
+ls_idoc_data-segnam = 'E1EDP01'.
+ls_idoc_data-sdata  = '000010MATNR000000100EA...'.  " Line item: item number, material number, quantity, UOM etc.
+APPEND ls_idoc_data TO lt_idoc_data.
 
-* You can add additional segments for conditions, texts, delivery date, etc. as per business needs.
+* Add other segments as per business need:
+* (E1EDP19 for item conditions, E1EDK14 for delivery dates, E1EDKT1/E1EDKT2 for texts)
 
-* Finally, call the function
+* Finally, call the FM
 CALL FUNCTION 'IDOC_INPUT_ORDERS'
   EXPORTING
-    pi_edidc      = ls_edidc
+    input_method      = '1'   " (1 - background processing)
+    mass_processing   = 'X'
+  IMPORTING
+    document_number   = lv_doc_number
   TABLES
-    pi_edidd      = lt_edidd
+    idoc_control      = VALUE #( ( ls_idoc_control ) )
+    idoc_data         = lt_idoc_data
+    idoc_status       = lt_idoc_status
   EXCEPTIONS
-    error_message = 1
-    OTHERS        = 2.
+    error_message     = 1
+    OTHERS            = 2.
 
 IF sy-subrc = 0.
-  WRITE: / 'Sales order created via IDOC_INPUT_ORDERS.'.
+  WRITE: / 'Sales order created via IDOC with number:', lv_doc_number.
 ELSE.
-  WRITE: / 'Error in creating sales order through IDoc interface.'.
+  WRITE: / 'Error occurred during sales order creation through IDOC_INPUT_ORDERS.'.
 ENDIF.
 
 
