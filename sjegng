@@ -1,181 +1,18 @@
-DATA: lt_idoc_data   TYPE STANDARD TABLE OF edidd,
-      ls_idoc_data   TYPE edidd,
-      lt_idoc_status TYPE STANDARD TABLE OF bdidocstat,
-      ls_idoc_control TYPE edidc,
-      lv_doc_number  TYPE vbak-vbeln.
-
-* Fill control record
-CLEAR ls_idoc_control.
-ls_idoc_control-mandt   = sy-mandt.
-ls_idoc_control-idoctp  = 'ORDERS05'.
-ls_idoc_control-mestyp  = 'ORDERS'.
-ls_idoc_control-sndprn  = 'SOURCESYS'.   " Change to actual sender
-ls_idoc_control-sndprt  = 'LS'.
-ls_idoc_control-rcvprn  = 'TARGETSYS'.   " Change to actual receiver
-ls_idoc_control-rcvprt  = 'LS'.
-ls_idoc_control-direct  = '2'.  " Inbound processing
-ls_idoc_control-test    = space.
-
-* Fill header data segment
-CLEAR ls_idoc_data.
-ls_idoc_data-segnam = 'E1EDK01'.
-ls_idoc_data-sdata  = 'Your header-level IDOC data here - map fields from E1EDK01'.  " Fill segment fields in correct sequence
-APPEND ls_idoc_data TO lt_idoc_data.
-
-* Partner data: sold-to
-CLEAR ls_idoc_data.
-ls_idoc_data-segnam = 'E1EDKA1'.
-ls_idoc_data-sdata  = 'AG0000123456...'.   " Partner function AG and customer number
-APPEND ls_idoc_data TO lt_idoc_data.
-
-* Item segment example
-CLEAR ls_idoc_data.
-ls_idoc_data-segnam = 'E1EDP01'.
-ls_idoc_data-sdata  = '000010MATNR000000100EA...'.  " Line item: item number, material number, quantity, UOM etc.
-APPEND ls_idoc_data TO lt_idoc_data.
-
-* Add other segments as per business need:
-* (E1EDP19 for item conditions, E1EDK14 for delivery dates, E1EDKT1/E1EDKT2 for texts)
-
-* Finally, call the FM
-CALL FUNCTION 'IDOC_INPUT_ORDERS'
-  EXPORTING
-    input_method      = '1'   " (1 - background processing)
-    mass_processing   = 'X'
-  IMPORTING
-    document_number   = lv_doc_number
-  TABLES
-    idoc_control      = VALUE #( ( ls_idoc_control ) )
-    idoc_data         = lt_idoc_data
-    idoc_status       = lt_idoc_status
-  EXCEPTIONS
-    error_message     = 1
-    OTHERS            = 2.
-
-IF sy-subrc = 0.
-  WRITE: / 'Sales order created via IDOC with number:', lv_doc_number.
-ELSE.
-  WRITE: / 'Error occurred during sales order creation through IDOC_INPUT_ORDERS.'.
-ENDIF.
-
-
-
 *&---------------------------------------------------------------------*
-*& Report zsim_ord_poc
-*&---------------------------------------------------------------------*
-*&
-*&---------------------------------------------------------------------*
-REPORT zsim_ord_poc MESSAGE-ID zotc
-                            NO STANDARD PAGE HEADING.
-
-
-INCLUDE zsim_ord_poc_top." Global Data Declaration
-INCLUDE zsim_ord_poc_sel." Selection Screen
-INCLUDE zsim_ord_poc_f01." Processing Logic
-
-START-OF-SELECTION.
-
-  DATA(lo_obj) = NEW lcl_order_creation( ).
-
-* Fetch Customer Data
-  lo_obj->fetch_data( ).
-
-  IF gt_orders IS NOT INITIAL.
-
-* Process Data
-    lo_obj->process_data( ).
-* Display Output
-    lo_obj->display_output( ).
-
-  ENDIF.
-
-
-*&---------------------------------------------------------------------*
-*&  Include  zsim_ord_poc_top
+*&  Include  zsim_ord_poc_f01
 *&---------------------------------------------------------------------*
 
-    TYPES: BEGIN OF ty_orders,
-             vbeln   TYPE vbak-vbeln,
-             auart   TYPE vbak-auart,
-             vkorg   TYPE vbak-vkorg,
-             vtweg   TYPE vbak-vtweg,
-             spart   TYPE vbak-spart,
-             kunnr   TYPE vbak-kunnr,
-             posnr   TYPE vbap-posnr,
-             matnr   TYPE vbap-matnr,
-             werks   TYPE vbap-werks,
-             message TYPE bapiret2-message,
-             "error tab
-*             ship_to TYPE vbpa-kunnr,
-           END OF ty_orders.
-
-    DATA: gv_count     TYPE i VALUE 0,
-          gv_errcount  TYPE i VALUE 0,
-          gv_totcount  TYPE i,
-          gt_orders    TYPE TABLE OF ty_orders,
-          gs_sucorders TYPE ty_orders,
-          gs_errorders TYPE ty_orders,
-          gt_sucorders TYPE TABLE OF ty_orders,
-          gt_errorders TYPE TABLE OF ty_orders.
 
 
-    DATA: lt_fieldcat_suc TYPE slis_t_fieldcat_alv,
-          lt_fieldcat_err TYPE slis_t_fieldcat_alv,
-          ls_fieldcat     TYPE slis_fieldcat_alv.
-
-    CLASS lcl_order_creation DEFINITION.
-      PUBLIC SECTION.
-        METHODS:
-          fetch_data,
-          process_data,
-          display_output.
-
-    ENDCLASS.
-
-
-*&---------------------------------------------------------------------*
-*&  Include  zsim_ord_poc_sel
-*&---------------------------------------------------------------------*
-
-DATA: gv_kunnr TYPE kna1-kunnr,
-      gv_auart TYPE vbak-auart,
-      gv_vkorg TYPE vbak-vkorg,
-      gv_vtweg TYPE vbak-vtweg,
-      gv_spart TYPE vbak-spart,
-      gv_matnr TYPE vbap-matnr,
-      gv_werks TYPE vbap-werks.
-
-SELECTION-SCREEN: BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
-
-SELECT-OPTIONS: s_kunnr FOR gv_kunnr.                           " Customer Number
-SELECT-OPTIONS: s_auart FOR gv_auart NO INTERVALS NO-EXTENSION, " Document Type
-                s_vkorg FOR gv_vkorg NO INTERVALS NO-EXTENSION. " Sales Org
-SELECT-OPTIONS: s_vtweg FOR gv_vtweg NO INTERVALS NO-EXTENSION, " Dist Channel
-                s_spart FOR gv_spart NO INTERVALS NO-EXTENSION, " Division
-                s_matnr FOR gv_matnr,
-                s_werks FOR gv_werks.
-
-SELECTION-SCREEN: END OF BLOCK blk1.
-
-SELECTION-SCREEN: BEGIN OF BLOCK blk2 WITH FRAME TITLE TEXT-002.
-
-PARAMETERS: p_ordctr TYPE i DEFAULT 3 OBLIGATORY.   " Number of Orders to Simulate
-
-SELECTION-SCREEN: END OF BLOCK blk2.
-
-
-
-*&---------------------------------------------------------------------*
-*&  Include  zmotc_simulate_orders_f01
-*&---------------------------------------------------------------------*
 
 CLASS lcl_order_creation IMPLEMENTATION.
 
   METHOD fetch_data.
 
-    DATA lv_date TYPE syst_datum.
+    DATA: lv_date TYPE syst_datum.
 
     DATA(lv_count) = p_ordctr * 100.
+
 
 *    DATA(lv_date) = sy-datum - 1095.
 
@@ -200,6 +37,8 @@ CLASS lcl_order_creation IMPLEMENTATION.
          FROM vbak AS vbak
             INNER JOIN vbap AS vbap
             ON vbak~vbeln = vbap~vbeln
+*            INNER JOIN kna1 AS kna1
+*            ON vbak~kunnr = kna1~kunnr
 *            INNER JOIN vbpa AS vbpa
 *            ON vbak~vbeln = vbpa~vbeln
          INTO TABLE @gt_orders
@@ -214,6 +53,8 @@ CLASS lcl_order_creation IMPLEMENTATION.
 *       AND   vbpa~parvw         EQ 'SH'.
        AND   vbak~erdat >= @lv_date AND vbak~erdat <= @sy-datum.
 
+
+
     IF sy-subrc = 0.
 
       SORT gt_orders BY kunnr matnr.
@@ -223,7 +64,6 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
 
   ENDMETHOD.
-
 
   METHOD process_data.
 
@@ -259,13 +99,19 @@ CLASS lcl_order_creation IMPLEMENTATION.
     WHILE gv_count < p_ordctr.
 
       TRY.
-
 * Stop the program if the iteration exceed the number of orders has been selected.
           IF sy-index = lv_lines.
 
             EXIT.
 
           ENDIF.
+
+          DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
+          CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+            EXPORTING
+              percentage = lv_progress
+              text       = |Simulation Progress : { lv_progress } %|.
+
 
 * Copy header from the orders
 * Get a random customer and header data details
@@ -281,10 +127,13 @@ CLASS lcl_order_creation IMPLEMENTATION.
 * Some order will have 1 or 2 or 3 material based on error list
           DO 3 TIMES.
 
+
             DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
 
             ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
                                                                           plant    = werks ).
+
+
 
 * IF same combination exit, go ahead and pick the next material
             IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
@@ -295,7 +144,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
             ls_item-po_itm_no = lv_itemno.
             ls_item-target_qty = '1.000'.
-            "ls_item-sales_unit = 'EA'.
+            ls_item-sales_unit = 'EA'.
 
             APPEND ls_item TO lt_item.
 
@@ -344,16 +193,17 @@ CLASS lcl_order_creation IMPLEMENTATION.
           IF line_exists( lt_return[ type = 'E' ] ).
 
             gv_errcount = gv_errcount + 1.
-            gs_errorders-vbeln = ''.
-            gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
 
+            gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
+            gs_errorders-vbeln = ''.
             LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
 
               gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
-                                                                                       werks = plant      ).
+                                                                                       werks = plant
+                                                                                       req_qty = target_qty
+                                                                                       req_uom = sales_unit ).
 
               APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
-              "
 
             ENDLOOP.
 
@@ -399,7 +249,9 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
                 gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
                                                                                          werks = plant
-                                                                                         posnr = po_itm_no ).
+                                                                                         posnr = po_itm_no
+                                                                                         req_qty = target_qty
+                                                                                         req_uom = sales_unit ).
 
 
                 APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
@@ -437,6 +289,260 @@ CLASS lcl_order_creation IMPLEMENTATION.
 
   ENDMETHOD.
 
+
+  METHOD process_idoc.
+
+    CONSTANTS:lc_x TYPE char01 VALUE 'X'.
+
+* To Create Order
+    DATA: lv_index          TYPE i VALUE 1,
+          lv_itemno         TYPE posnr VALUE 10,
+          ls_header         TYPE bapisdhead,
+          ls_ord_header     TYPE bapisdhd1,
+          ls_ord_headerx    TYPE bapisdhd1x,
+          ls_headerx        TYPE bapisdheadx,
+          ls_item           TYPE bapiitemin,
+          lt_ord_item       TYPE TABLE OF bapisditm,
+          lt_ord_itemx      TYPE TABLE OF bapisditmx,
+          lt_ord_schd       TYPE TABLE OF bapischdl,
+          lt_ord_schdx      TYPE TABLE OF bapischdlx,
+          lv_vbeln          TYPE vbeln,
+          lv_lines          TYPE i,
+          lt_item           TYPE TABLE OF bapiitemin,
+          lt_partners       TYPE TABLE OF bapipartnr,
+          lt_return         TYPE TABLE OF bapiret2,
+          lt_order_partners TYPE TABLE OF bapiparnr,
+          lt_schedule       TYPE TABLE OF bapischdl,
+          ls_schedule       TYPE bapischdl.
+
+
+    DATA(lo_rand) = cl_abap_random=>create( ).
+
+    lv_lines = lines( gt_orders ).
+
+
+    WHILE gv_count < p_ordctr.
+
+      TRY.
+* Stop the program if the iteration exceed the number of orders has been selected.
+          IF sy-index = lv_lines.
+
+            EXIT.
+
+          ENDIF.
+
+          DATA(lv_progress) = ( gv_count * 100 ) / p_ordctr.
+          CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+            EXPORTING
+              percentage = lv_progress
+              text       = |Simulation Progress : { lv_progress } %|.
+
+
+* Copy header from the orders
+* Get a random customer and header data details
+
+          DATA(ls_order) = VALUE ty_orders( gt_orders[ lo_rand->intinrange( low = 1 high = lv_lines ) ] ).
+
+          ls_header = CORRESPONDING #( ls_order MAPPING doc_type    = auart
+                                                        sales_org   = vkorg
+                                                        distr_chan  = vtweg
+                                                        division    = spart ).
+
+* Copy 3 Item from the orders randomly
+* Some order will have 1 or 2 or 3 material based on error list
+          DO 3 TIMES.
+
+
+            DATA(lv_randomnum) = lo_rand->intinrange( low = 1 high = lv_lines ).
+
+            ls_item =  CORRESPONDING #( gt_orders[ lv_randomnum ] MAPPING material = matnr
+                                                                          plant    = werks ).
+
+
+
+* IF same combination exit, go ahead and pick the next material
+            IF line_exists( gt_errorders[ kunnr = ls_order-kunnr matnr = ls_item-material ] ).
+
+              CONTINUE.
+
+            ENDIF.
+
+            ls_item-po_itm_no = lv_itemno.
+            ls_item-target_qty = '1.000'.
+            ls_item-sales_unit = 'EA'.
+
+            APPEND ls_item TO lt_item.
+
+
+            ls_schedule-itm_number = lv_itemno.
+            ls_schedule-req_qty = ls_item-target_qty.
+            ls_schedule-req_date = sy-datum.
+            APPEND ls_schedule TO lt_schedule.
+
+
+            APPEND VALUE #( material = abap_true plant = abap_true ) TO lt_ord_itemx.
+            APPEND VALUE #( itm_number = lv_itemno req_qty = abap_true req_date = abap_true ) TO lt_ord_schdx.
+
+            lv_itemno = lv_itemno + 10.
+
+            CLEAR : ls_item, ls_schedule.
+          ENDDO.
+
+* if no item exist then proceed with next combination
+          IF lt_item[] IS INITIAL.
+
+            CONTINUE.
+
+          ENDIF.
+
+          lt_order_partners = VALUE #( ( partn_role = 'AG'
+                                         partn_numb = ls_order-kunnr ) ).
+
+          CLEAR lv_vbeln.
+          CALL FUNCTION 'BAPI_SALESORDER_SIMULATE'
+            EXPORTING
+              order_header_in   = ls_header
+            IMPORTING
+              salesdocument     = lv_vbeln
+            TABLES
+              order_items_in    = lt_item
+              order_partners    = lt_order_partners
+              order_schedule_in = lt_schedule
+              messagetable      = lt_return.
+
+          LOOP AT lt_return ASSIGNING FIELD-SYMBOL(<ls_return>) WHERE type = 'E'.
+            gs_errorders-message = <ls_return>-message.
+            APPEND gs_errorders TO gt_errorders.
+          ENDLOOP.
+
+          IF line_exists( lt_return[ type = 'E' ] ).
+
+            gv_errcount = gv_errcount + 1.
+
+            gs_errorders = CORRESPONDING #( ls_order EXCEPT matnr ).
+            gs_errorders-vbeln = ''.
+            LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<lfs_item>).
+
+              gs_errorders = CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> MAPPING matnr = material
+                                                                                       werks = plant      ).
+
+              APPEND CORRESPONDING #( BASE ( gs_errorders ) <lfs_item> ) TO gt_errorders .
+
+
+            ENDLOOP.
+
+
+
+          ELSE.
+
+            ls_ord_header  = CORRESPONDING #( ls_header ).
+            ls_ord_headerx = VALUE #( doc_type    = abap_true
+                                      sales_org   = abap_true
+                                      distr_chan  = abap_true
+                                      division    = abap_true ).
+
+            lt_ord_item    = CORRESPONDING #( lt_item ).
+            lt_ord_schd    = CORRESPONDING #( lt_schedule ).
+
+            DATA: lt_edidc TYPE TABLE OF edidc,
+                  ls_edidc TYPE edidc,
+                  lt_edidd TYPE TABLE OF edidd,
+                  ls_edidd TYPE edidd.
+
+
+            CLEAR ls_edidc.
+
+* Fill IDoc control record
+            ls_edidc-mandt     = sy-mandt.
+            ls_edidc-direct    = '2'.                     " Inbound
+            ls_edidc-doctyp    = 'ORDERS05'.
+            ls_edidc-mestyp    = 'ORDERS'.
+            ls_edidc-rcvprn    = 'DE2CLNT200'.
+            ls_edidc-rcvprt    = 'LS'.
+            ls_edidc-sndprn    = 'DE2CLNT200'.
+            ls_edidc-sndprt    = 'LS'.
+            APPEND ls_edidc TO lt_edidc.
+
+* Header Segment E1EDK01
+            CLEAR ls_edidd.
+            ls_edidd-segnam = 'E1EDK01'.
+            ls_edidd-sdata = |EURTA{ ls_header-sales_org }{ ls_header-distr_chan }{ ls_header-division }TESTORDER001|.
+            APPEND ls_edidd TO lt_edidd.
+
+* Sold-to party E1EDKA1
+            CLEAR ls_edidd.
+            ls_edidd-segnam = 'E1EDKA1'.
+            ls_edidd-sdata = |AG{ ls_order-kunnr }|.
+            APPEND ls_edidd TO lt_edidd.
+
+* Ship-to party E1EDKA1 (reusing same customer)
+            CLEAR ls_edidd.
+            ls_edidd-segnam = 'E1EDKA1'.
+            ls_edidd-sdata = |WE{ ls_order-kunnr }|.
+            APPEND ls_edidd TO lt_edidd.
+
+* Line item E1EDP01
+            loop at lt_item ASSIGNING   FIELD-SYMBOL(<lfs_item1>).
+
+
+            CLEAR ls_edidd.
+            ls_edidd-segnam = 'E1EDP01'.
+            ls_edidd-sdata = |000010{ <lfs_item1>-material }{ <lfs_item1>-target_qty }EA1000|.
+            APPEND ls_edidd TO lt_edidd.
+ENDLOOP.
+* Send the IDoc
+            CALL FUNCTION 'MASTER_IDOC_DISTRIBUTE'
+              EXPORTING
+                master_idoc_control        = ls_edidc
+              TABLES
+                communication_idoc_control = lt_edidc
+                master_idoc_data           = lt_edidd
+              EXCEPTIONS
+                OTHERS                     = 1.
+
+            IF sy-subrc = 0.
+              COMMIT WORK.
+
+              gs_sucorders = CORRESPONDING #( ls_order EXCEPT vbeln matnr ).
+              gs_sucorders-vbeln = lv_vbeln.
+
+
+              LOOP AT lt_item ASSIGNING <lfs_item>.
+
+                gs_sucorders = CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> MAPPING matnr = material
+                                                                                         werks = plant
+                                                                                         posnr = po_itm_no ).
+
+
+                APPEND CORRESPONDING #( BASE ( gs_sucorders ) <lfs_item> ) TO gt_sucorders .
+
+              ENDLOOP.
+
+              gv_count = gv_count + 1.
+            ELSE.
+              WRITE: / 'Error creating IDoc.'.
+            ENDIF.
+
+          ENDIF.
+
+      ENDTRY.
+
+
+* Reset all data
+      lv_index = lv_index + 1. " Next line
+
+      CLEAR: ls_order, gs_sucorders, gs_errorders, ls_ord_header, ls_ord_headerx, ls_header, ls_headerx,
+             lt_item[], lt_ord_item[], lt_ord_itemx[], lt_order_partners[], lt_return[], lv_itemno.
+
+
+*  Reset the item number back to 10
+      lv_itemno = 10.
+
+    ENDWHILE.
+
+  ENDMETHOD.
+
+
   METHOD display_output.
 
     DATA: v_repid      TYPE syrepid,
@@ -450,10 +556,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
           it_events_suc TYPE slis_t_event,
           it_events_err TYPE slis_t_event,
           wa_events     TYPE LINE OF slis_t_event.
-
-
     v_repid = sy-repid.
-
     PERFORM populate_fieldcat.
 
 
@@ -480,6 +583,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
         it_fieldcat                = lt_fieldcat_suc
         i_tabname                  = i_tabname
         it_events                  = it_events_suc
+      " i_text                     = 'Successful orders'
       TABLES
         t_outtab                   = gt_sucorders
       EXCEPTIONS
@@ -504,6 +608,7 @@ CLASS lcl_order_creation IMPLEMENTATION.
         it_fieldcat                = lt_fieldcat_err
         i_tabname                  = i_tabname
         it_events                  = it_events_err
+        "i_text                     = text-004
       TABLES
         t_outtab                   = gt_errorders
       EXCEPTIONS
@@ -576,128 +681,164 @@ FORM top_page2.
       it_list_commentary = lt_list_commentary.
 ENDFORM.
 
+
 FORM populate_fieldcat.
 
   ls_fieldcat-col_pos = '1'.
-  ls_fieldcat-fieldname = 'AUART'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Sales Document Type'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '2'.
-  ls_fieldcat-fieldname = 'VKORG'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Sales Organization'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '3'.
-  ls_fieldcat-fieldname = 'VTWEG'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Distribution Channel'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '4'.
-  ls_fieldcat-fieldname = 'SPART'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Division'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '5'.
-  ls_fieldcat-fieldname = 'KUNNR'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Sold-To Party'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '6'.
-  ls_fieldcat-fieldname = 'POSNR'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Item'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '7'.
-  ls_fieldcat-fieldname = 'MATNR'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Material Number'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-
-  ls_fieldcat-col_pos = '8'.
-  ls_fieldcat-fieldname = 'WERKS'.
-  ls_fieldcat-tabname = 'gt_sucorders'.
-  ls_fieldcat-seltext_m = 'Plant'.
-  APPEND ls_fieldcat TO lt_fieldcat_suc.
-  CLEAR ls_fieldcat.
-  "----------------------------------------------------------------------------------
-  ls_fieldcat-col_pos = '1'.
   ls_fieldcat-fieldname = 'VBELN'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sales Document'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '2'.
   ls_fieldcat-fieldname = 'AUART'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sales Document Type'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '3'.
   ls_fieldcat-fieldname = 'VKORG'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sales Organization'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '4'.
   ls_fieldcat-fieldname = 'VTWEG'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Distribution Channel'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '5'.
   ls_fieldcat-fieldname = 'SPART'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Division'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '6'.
   ls_fieldcat-fieldname = 'KUNNR'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Sold-To Party'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '7'.
   ls_fieldcat-fieldname = 'POSNR'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Item'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '8'.
   ls_fieldcat-fieldname = 'MATNR'.
-  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
   ls_fieldcat-seltext_m = 'Material Number'.
-  APPEND ls_fieldcat TO lt_fieldcat_err.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
   CLEAR ls_fieldcat.
 
   ls_fieldcat-col_pos = '9'.
   ls_fieldcat-fieldname = 'WERKS'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
+  ls_fieldcat-seltext_m = 'Plant'.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '10'.
+  ls_fieldcat-fieldname = 'REQ_QTY'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
+  ls_fieldcat-seltext_m = 'Quantity'.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '11'.
+  ls_fieldcat-fieldname = 'REQ_UOM'.
+  ls_fieldcat-tabname = 'gt_sucorders'.
+  ls_fieldcat-seltext_m = 'UOM'.
+  APPEND ls_fieldcat TO lt_fieldcat_suc.
+  CLEAR ls_fieldcat.
+  "----------------------------------------------------------------------------------
+*  ls_fieldcat-col_pos = '1'.
+*  ls_fieldcat-fieldname = 'VBELN'.
+*  ls_fieldcat-tabname = 'gt_errorders'.
+*  ls_fieldcat-seltext_m = 'Sales Document'.
+*  APPEND ls_fieldcat TO lt_fieldcat_err.
+*  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '1'.
+  ls_fieldcat-fieldname = 'AUART'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Sales Document Type'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '2'.
+  ls_fieldcat-fieldname = 'VKORG'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Sales Organization'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '3'.
+  ls_fieldcat-fieldname = 'VTWEG'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Distribution Channel'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '4'.
+  ls_fieldcat-fieldname = 'SPART'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Division'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '5'.
+  ls_fieldcat-fieldname = 'KUNNR'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Sold-To Party'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '6'.
+  ls_fieldcat-fieldname = 'POSNR'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Item'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '7'.
+  ls_fieldcat-fieldname = 'MATNR'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Material Number'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '8'.
+  ls_fieldcat-fieldname = 'WERKS'.
   ls_fieldcat-tabname = 'gt_errorders'.
   ls_fieldcat-seltext_m = 'Plant'.
   APPEND ls_fieldcat TO lt_fieldcat_err.
   CLEAR ls_fieldcat.
 
+  ls_fieldcat-col_pos = '9'.
+  ls_fieldcat-fieldname = 'REQ_QTY'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'Quantity'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
   ls_fieldcat-col_pos = '10'.
+  ls_fieldcat-fieldname = 'REQ_UOM'.
+  ls_fieldcat-tabname = 'gt_errorders'.
+  ls_fieldcat-seltext_m = 'UOM'.
+  APPEND ls_fieldcat TO lt_fieldcat_err.
+  CLEAR ls_fieldcat.
+
+  ls_fieldcat-col_pos = '11'.
   ls_fieldcat-fieldname = 'MESSAGE'.
   ls_fieldcat-tabname = 'gt_errorders'.
   ls_fieldcat-seltext_m = 'Error Message'.
