@@ -1,3 +1,45 @@
+* Collect VBELNs from successful orders
+DATA(lt_vbeln_keys) = VALUE #( 
+  FOR ls_order IN gt_sucorders
+  ( vbeln = ls_order-vbeln ) 
+).
+
+DELETE ADJACENT DUPLICATES FROM lt_vbeln_keys COMPARING vbeln.
+
+SELECT vbeln
+       posnr
+       kwmeng
+       vrkme
+  FROM vbap
+  INTO TABLE lt_vbap
+  FOR ALL ENTRIES IN @lt_vbeln_keys
+  WHERE vbeln = @lt_vbeln_keys-vbeln.
+
+SORT lt_vbap BY vbeln posnr.
+
+* Read ship-to partner once for each VBELN
+LOOP AT gt_sucorders ASSIGNING FIELD-SYMBOL(<fs_suc>).
+
+  READ TABLE lt_vbap INTO ls_vbap
+       WITH KEY vbeln = <fs_suc>-vbeln
+                posnr = <fs_suc>-posnr
+       BINARY SEARCH.
+  IF sy-subrc = 0.
+    <fs_suc>-req_qty = ls_vbap-kwmeng.
+    <fs_suc>-req_uom = ls_vbap-vrkme.
+  ENDIF.
+
+  IF <fs_suc>-ship_to IS INITIAL.
+    SELECT SINGLE kunnr
+      INTO @<fs_suc>-ship_to
+      FROM vbpa
+      WHERE vbeln = @<fs_suc>-vbeln
+        AND parvw = 'WE'.
+  ENDIF.
+
+ENDLOOP.
+
+
 *&---------------------------------------------------------------------*
 *& Report zsim_ord_poc
 *&---------------------------------------------------------------------*
